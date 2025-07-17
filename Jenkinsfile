@@ -35,7 +35,7 @@ pipeline {
                             echo "Checking Kafka Broker..."
                             docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
                             exec -T broker bash -c "echo 'Broker is responsive'"
-                            
+
                             echo "Checking Schema Registry..."
                             docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
                             exec -T schema-registry curl -f -s http://localhost:8081/subjects > /dev/null
@@ -130,13 +130,13 @@ EOF"
                 sh '''
                 echo "Registering User schema..."
                 docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
-                exec -T schema-registry bash -c "
-                    curl -X POST -H 'Content-Type: application/vnd.schemaregistry.v1+json' \
-                    --data '{
-                        \"schema\": \"{\\\"type\\\":\\\"record\\\",\\\"name\\\":\\\"User\\\",\\\"namespace\\\":\\\"com.example\\\",\\\"fields\\\":[{\\\"name\\\":\\\"id\\\",\\\"type\\\":\\\"int\\\"},{\\\"name\\\":\\\"name\\\",\\\"type\\\":\\\"string\\\"},{\\\"name\\\":\\\"email\\\",\\\"type\\\":\\\"string\\\"},{\\\"name\\\":\\\"age\\\",\\\"type\\\":\\\"int\\\"}]}\"
-                    }' \
-                    http://localhost:8081/subjects/$TEST_TOPIC-value/versions
-                "
+                exec -T schema-registry bash -c '
+                    curl -X POST -H "Content-Type: application/vnd.schemaregistry.v1+json" \
+                    --data '"'"'{
+                        "schema": "{\\"type\\":\\"record\\",\\"name\\":\\"User\\",\\"namespace\\":\\"com.example\\",\\"fields\\":[{\\"name\\":\\"id\\",\\"type\\":\\"int\\"},{\\"name\\":\\"name\\",\\"type\\":\\"string\\"},{\\"name\\":\\"email\\",\\"type\\":\\"string\\"},{\\"name\\":\\"age\\",\\"type\\":\\"int\\"}]}"
+                    }'"'"' \
+                    http://localhost:8081/subjects/'"$TEST_TOPIC"'-value/versions
+                '
                 '''
             }
         }
@@ -146,12 +146,12 @@ EOF"
                 sh '''
                 echo "Verifying schema registration..."
                 docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
-                exec -T schema-registry bash -c "
-                    echo 'Schema registration response:'
-                    curl -s http://localhost:8081/subjects/$TEST_TOPIC-value/versions/latest
-                    echo ''
-                    echo 'Schema verification completed'
-                "
+                exec -T schema-registry bash -c '
+                    echo "Schema registration response:"
+                    curl -s http://localhost:8081/subjects/'"$TEST_TOPIC"'-value/versions/latest
+                    echo ""
+                    echo "Schema verification completed"
+                '
                 '''
             }
         }
