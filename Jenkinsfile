@@ -2,7 +2,27 @@ pipeline {
     agent any
     environment {
         COMPOSE_DIR = '/confluent/cp-mysetup/cp-all-in-one'
+        SCHEMA_REGISTRY_URL = 'http://localhost:8081'
     }
+    
+    parameters {
+        choice(
+            name: 'SCHEMA_REGISTRY_ACTION',
+            choices: ['LIST_SUBJECTS', 'CREATE_SCHEMA', 'DELETE_SUBJECT', 'GET_SCHEMA', 'UPDATE_SCHEMA'],
+            description: 'Select Schema Registry action to perform'
+        )
+        string(
+            name: 'SUBJECT_NAME',
+            defaultValue: '',
+            description: 'Schema subject name (required for CREATE/DELETE/GET/UPDATE operations)'
+        )
+        text(
+            name: 'SCHEMA_DEFINITION',
+            defaultValue: '',
+            description: 'JSON schema definition (required for CREATE/UPDATE operations)'
+        )
+    }
+    
     stages {
         stage('Verify Docker Compose Setup') {
             steps {
@@ -43,6 +63,35 @@ pipeline {
 
                     if (!brokerReady) {
                         error("Broker failed to start after ${maxRetries} attempts")
+                    }
+                }
+            }
+        }
+
+        stage('Wait for Schema Registry') {
+            steps {
+                script {
+                    def maxRetries = 30
+                    def retryCount = 0
+                    def schemaRegistryReady = false
+
+                    while (retryCount < maxRetries && !schemaRegistryReady) {
+                        try {
+                            sh '''
+                            docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                            exec -T schema-registry bash -c "curl -s http://localhost:8081/subjects || exit 1"
+                            '''
+                            schemaRegistryReady = true
+                            echo "Schema Registry is ready!"
+                        } catch (Exception e) {
+                            echo "Schema Registry not ready yet, waiting... (attempt ${retryCount + 1}/${maxRetries})"
+                            sleep(10)
+                            retryCount++
+                        }
+                    }
+
+                    if (!schemaRegistryReady) {
+                        error("Schema Registry failed to start after ${maxRetries} attempts")
                     }
                 }
             }
@@ -95,6 +144,121 @@ EOF"
                 '''
             }
         }
+
+        stage('Test Schema Registry Connection') {
+            steps {
+                            sh '''
+                            echo "Testing Schema Registry connection..."
+                            docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                            exec -T schema-registry bash -c "
+                                curl -s ${SCHEMA_REGISTRY_URL}/subjects || echo 'Connection failed'
+                            "
+                            '''
+            }
+        }
+
+        stage('Schema Registry Operations') {
+            steps {
+                script {
+                    switch(params.SCHEMA_REGISTRY_ACTION) {
+                        case 'LIST_SUBJECTS':
+                            sh '''
+                            echo "Listing all schema subjects..."
+                            docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                            exec -T schema-registry bash -c "
+                                curl -s ${SCHEMA_REGISTRY_URL}/subjects | jq '.'
+                            "
+                            '''
+                            break
+                            
+                        case 'CREATE_SCHEMA':
+                            if (!params.SUBJECT_NAME || !params.SCHEMA_DEFINITION) {
+                                error("SUBJECT_NAME and SCHEMA_DEFINITION are required for CREATE_SCHEMA operation")
+                            }
+                            sh '''
+                            echo "Creating schema for subject: ${SUBJECT_NAME}"
+                            docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                            exec -T schema-registry bash -c "
+                                curl -s \
+                                -X POST \
+                                -H 'Content-Type: application/vnd.schemaregistry.v1+json' \
+                                -d '{\"schema\": \"${SCHEMA_DEFINITION}\"}' \
+                                ${SCHEMA_REGISTRY_URL}/subjects/${SUBJECT_NAME}/versions | jq '.'
+                            "
+                            '''
+                            break
+                            
+                        case 'DELETE_SUBJECT':
+                            if (!params.SUBJECT_NAME) {
+                                error("SUBJECT_NAME is required for DELETE_SUBJECT operation")
+                            }
+                            sh '''
+                            echo "Deleting subject: ${SUBJECT_NAME}"
+                            docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                            exec -T schema-registry bash -c "
+                                curl -s \
+                                -X DELETE \
+                                ${SCHEMA_REGISTRY_URL}/subjects/${SUBJECT_NAME} | jq '.'
+                            "
+                            '''
+                            break
+                            
+                        case 'GET_SCHEMA':
+                            if (!params.SUBJECT_NAME) {
+                                error("SUBJECT_NAME is required for GET_SCHEMA operation")
+                            }
+                            sh '''
+                            echo "Getting latest schema for subject: ${SUBJECT_NAME}"
+                            docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                            exec -T schema-registry bash -c "
+                                curl -s \
+                                ${SCHEMA_REGISTRY_URL}/subjects/${SUBJECT_NAME}/versions/latest | jq '.'
+                            "
+                            '''
+                            break
+                            
+                        case 'UPDATE_SCHEMA':
+                            if (!params.SUBJECT_NAME || !params.SCHEMA_DEFINITION) {
+                                error("SUBJECT_NAME and SCHEMA_DEFINITION are required for UPDATE_SCHEMA operation")
+                            }
+                            sh '''
+                            echo "Updating schema for subject: ${SUBJECT_NAME}"
+                            docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                            exec -T schema-registry bash -c "
+                                curl -s \
+                                -X POST \
+                                -H 'Content-Type: application/vnd.schemaregistry.v1+json' \
+                                -d '{\"schema\": \"${SCHEMA_DEFINITION}\"}' \
+                                ${SCHEMA_REGISTRY_URL}/subjects/${SUBJECT_NAME}/versions | jq '.'
+                            "
+                            '''
+                            break
+                            
+                        default:
+                            echo "No specific Schema Registry action selected"
+                    }
+                }
+            }
+        }
+
+        stage('Schema Registry Health Check') {
+            steps {
+                sh '''
+                echo "Checking Schema Registry health and configuration..."
+                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                exec -T schema-registry bash -c "
+                    echo 'Schema Registry Mode:'
+                    curl -s ${SCHEMA_REGISTRY_URL}/mode | jq '.'
+                    
+                    echo 'Schema Registry Config:'
+                    curl -s ${SCHEMA_REGISTRY_URL}/config | jq '.'
+                    
+                    echo 'Schema Registry Subjects Count:'
+                    curl -s ${SCHEMA_REGISTRY_URL}/subjects | jq 'length'
+                "
+                '''
+            }
+        }
     }
 
     post {
@@ -108,7 +272,11 @@ EOF"
             sh '''
             echo "Pipeline failed. Checking logs..."
             docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml logs --tail=50 broker || true
+            docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml logs --tail=50 schema-registry || true
             '''
+        }
+        success {
+            echo "Pipeline completed successfully! Schema Registry operations completed."
         }
     }
 }
