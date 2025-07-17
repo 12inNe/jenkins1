@@ -3,6 +3,7 @@ pipeline {
     environment {
         COMPOSE_DIR = '/confluent/cp-mysetup/cp-all-in-one'
         SCHEMA_REGISTRY_URL = 'http://localhost:8081'
+        SCHEMA_REGISTRY_AUTH = 'schema-registry:password'
     }
     
     parameters {
@@ -147,13 +148,13 @@ EOF"
 
         stage('Test Schema Registry Connection') {
             steps {
-                            sh '''
-                            echo "Testing Schema Registry connection..."
-                            docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
-                            exec -T schema-registry bash -c "
-                                curl -s ${SCHEMA_REGISTRY_URL}/subjects || echo 'Connection failed'
-                            "
-                            '''
+                sh '''
+                echo "Testing Schema Registry connection..."
+                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                exec -T schema-registry bash -c "
+                    curl -s -u ${SCHEMA_REGISTRY_AUTH} ${SCHEMA_REGISTRY_URL}/subjects || echo 'Connection failed'
+                "
+                '''
             }
         }
 
@@ -166,11 +167,11 @@ EOF"
                             echo "Listing all schema subjects..."
                             docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
                             exec -T schema-registry bash -c "
-                                curl -s ${SCHEMA_REGISTRY_URL}/subjects
+                                curl -s -u ${SCHEMA_REGISTRY_AUTH} ${SCHEMA_REGISTRY_URL}/subjects | jq '.'
                             "
                             '''
                             break
-                            
+
                         case 'CREATE_SCHEMA':
                             if (!params.SUBJECT_NAME || !params.SCHEMA_DEFINITION) {
                                 error("SUBJECT_NAME and SCHEMA_DEFINITION are required for CREATE_SCHEMA operation")
@@ -179,11 +180,11 @@ EOF"
                             echo "Creating schema for subject: ${SUBJECT_NAME}"
                             docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
                             exec -T schema-registry bash -c "
-                                curl -s \
+                                curl -s -u ${SCHEMA_REGISTRY_AUTH} \
                                 -X POST \
                                 -H 'Content-Type: application/vnd.schemaregistry.v1+json' \
                                 -d '{\"schema\": \"${SCHEMA_DEFINITION}\"}' \
-                                ${SCHEMA_REGISTRY_URL}/subjects/${SUBJECT_NAME}/versions
+                                ${SCHEMA_REGISTRY_URL}/subjects/${SUBJECT_NAME}/versions | jq '.'
                             "
                             '''
                             break
@@ -196,9 +197,9 @@ EOF"
                             echo "Deleting subject: ${SUBJECT_NAME}"
                             docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
                             exec -T schema-registry bash -c "
-                                curl -s \
+                                curl -s -u ${SCHEMA_REGISTRY_AUTH} \
                                 -X DELETE \
-                                ${SCHEMA_REGISTRY_URL}/subjects/${SUBJECT_NAME}
+                                ${SCHEMA_REGISTRY_URL}/subjects/${SUBJECT_NAME} | jq '.'
                             "
                             '''
                             break
@@ -211,8 +212,8 @@ EOF"
                             echo "Getting latest schema for subject: ${SUBJECT_NAME}"
                             docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
                             exec -T schema-registry bash -c "
-                                curl -s \
-                                ${SCHEMA_REGISTRY_URL}/subjects/${SUBJECT_NAME}/versions/latest
+                                curl -s -u ${SCHEMA_REGISTRY_AUTH} \
+                                ${SCHEMA_REGISTRY_URL}/subjects/${SUBJECT_NAME}/versions/latest | jq '.'
                             "
                             '''
                             break
@@ -225,11 +226,11 @@ EOF"
                             echo "Updating schema for subject: ${SUBJECT_NAME}"
                             docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
                             exec -T schema-registry bash -c "
-                                curl -s \
+                                curl -s -u ${SCHEMA_REGISTRY_AUTH} \
                                 -X POST \
                                 -H 'Content-Type: application/vnd.schemaregistry.v1+json' \
                                 -d '{\"schema\": \"${SCHEMA_DEFINITION}\"}' \
-                                ${SCHEMA_REGISTRY_URL}/subjects/${SUBJECT_NAME}/versions
+                                ${SCHEMA_REGISTRY_URL}/subjects/${SUBJECT_NAME}/versions | jq '.'
                             "
                             '''
                             break
@@ -248,16 +249,13 @@ EOF"
                 docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
                 exec -T schema-registry bash -c "
                     echo 'Schema Registry Mode:'
-                    curl -s ${SCHEMA_REGISTRY_URL}/mode
-                    echo
+                    curl -s -u ${SCHEMA_REGISTRY_AUTH} ${SCHEMA_REGISTRY_URL}/mode | jq '.'
                     
                     echo 'Schema Registry Config:'
-                    curl -s ${SCHEMA_REGISTRY_URL}/config
-                    echo
+                    curl -s -u ${SCHEMA_REGISTRY_AUTH} ${SCHEMA_REGISTRY_URL}/config | jq '.'
                     
-                    echo 'Schema Registry Subjects:'
-                    curl -s ${SCHEMA_REGISTRY_URL}/subjects
-                    echo
+                    echo 'Schema Registry Subjects Count:'
+                    curl -s -u ${SCHEMA_REGISTRY_AUTH} ${SCHEMA_REGISTRY_URL}/subjects | jq 'length'
                 "
                 '''
             }
