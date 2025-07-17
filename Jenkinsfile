@@ -1,13 +1,5 @@
 pipeline {
     agent any
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-
-    stages {
-        stage('Hello') {
-=======
-=======
->>>>>>> Stashed changes
     
     // Active Choice Parameters for Schema Management
     parameters {
@@ -130,8 +122,6 @@ pipeline {
     
     stages {
         stage('Schema Parameter Validation') {
-<<<<<<< Updated upstream
-=======
             steps {
                 script {
                     echo "=== Schema Configuration ==="
@@ -151,58 +141,20 @@ pipeline {
         }
 
         stage('Verify Docker Compose Setup') {
->>>>>>> Stashed changes
             steps {
-                script {
-                    echo "=== Schema Configuration ==="
-                    echo "Schema Type: ${params.SCHEMA_TYPE}"
-                    echo "Schema Template: ${params.SCHEMA_TEMPLATE}"
-                    echo "Compatibility Level: ${params.COMPATIBILITY_LEVEL}"
-                    echo "Naming Strategy: ${params.SUBJECT_NAMING_STRATEGY}"
-                    echo "Schema Action: ${params.SCHEMA_ACTION}"
-                    echo "Schema Version: ${params.SCHEMA_VERSION}"
-                    echo "Validate Schema: ${params.VALIDATE_SCHEMA}"
-                    echo "Test Evolution: ${params.TEST_SCHEMA_EVOLUTION}"
-                    echo "Backup Existing: ${params.BACKUP_EXISTING_SCHEMA}"
-                    echo "Subject Name: ${env.SCHEMA_SUBJECT}"
-                    echo "============================"
-                }
+                sh '''
+                echo "Checking if compose directory exists..."
+                ls -la $COMPOSE_DIR
+
+                echo "Checking if docker-compose.yml exists..."
+                ls -la $COMPOSE_DIR/docker-compose.yml
+
+                echo "Checking running containers..."
+                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml ps
+                '''
             }
         }
 
-<<<<<<< Updated upstream
-        stage('Verify Docker Compose Setup') {
->>>>>>> Stashed changes
-            steps {
-                echo 'Hello, World!'
-            }
-        }
-
-<<<<<<< Updated upstream
-        stage('Fix Branch Detected') {
-            when {
-                branch "fix-*"
-            }
-            steps {
-                 sh '''
-                    cat README.md
-                 '''
-            }
-        }
-
-        stage('Pull Request Check') {
-            when {
-                branch "PR-*"
-            }
-            steps {
-                echo "This only runs for the PRs"
-            }
-        }
-    }
-}
-=======
-=======
->>>>>>> Stashed changes
         stage('Wait for Schema Registry') {
             steps {
                 script {
@@ -532,15 +484,10 @@ def testSchemaEvolution() {
         # Test adding optional field
         echo 'Testing schema evolution with optional field...'
         EVOLVED_SCHEMA='{\"schema\": \"{\\\\"type\\\\":\\\\"record\\\\",\\\\"name\\\\":\\\\"User\\\\",\\\\"namespace\\\\":\\\\"com.example\\\\",\\\\"fields\\\\":[{\\\\"name\\\\":\\\\"id\\\\",\\\\"type\\\\":\\\\"int\\\\"},{\\\\"name\\\\":\\\\"name\\\\",\\\\"type\\\\":\\\\"string\\\\"},{\\\\"name\\\\":\\\\"email\\\\",\\\\"type\\\\":\\\\"string\\\\"},{\\\\"name\\\\":\\\\"age\\\\",\\\\"type\\\\":\\\\"int\\\\"},{\\\\"name\\\\":\\\\"phone\\\\",\\\\"type\\\\":[\\\\"null\\\\",\\\\"string\\\\"],\\\\"default\\\\":null}]}\"}'
-
+        
         curl -X POST -H 'Content-Type: application/vnd.schemaregistry.v1+json' \
         --data \"\\$EVOLVED_SCHEMA\" \
         http://localhost:8081/compatibility/subjects/${SCHEMA_SUBJECT}/versions/latest
     "
     '''
-<<<<<<< Updated upstream
 }
->>>>>>> Stashed changes
-=======
-}
->>>>>>> Stashed changes
