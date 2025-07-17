@@ -166,7 +166,7 @@ EOF"
                             echo "Listing all schema subjects..."
                             docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
                             exec -T schema-registry bash -c "
-                                curl -s ${SCHEMA_REGISTRY_URL}/subjects | jq '.'
+                                curl -s ${SCHEMA_REGISTRY_URL}/subjects
                             "
                             '''
                             break
@@ -183,7 +183,7 @@ EOF"
                                 -X POST \
                                 -H 'Content-Type: application/vnd.schemaregistry.v1+json' \
                                 -d '{\"schema\": \"${SCHEMA_DEFINITION}\"}' \
-                                ${SCHEMA_REGISTRY_URL}/subjects/${SUBJECT_NAME}/versions | jq '.'
+                                ${SCHEMA_REGISTRY_URL}/subjects/${SUBJECT_NAME}/versions
                             "
                             '''
                             break
@@ -198,7 +198,7 @@ EOF"
                             exec -T schema-registry bash -c "
                                 curl -s \
                                 -X DELETE \
-                                ${SCHEMA_REGISTRY_URL}/subjects/${SUBJECT_NAME} | jq '.'
+                                ${SCHEMA_REGISTRY_URL}/subjects/${SUBJECT_NAME}
                             "
                             '''
                             break
@@ -212,7 +212,7 @@ EOF"
                             docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
                             exec -T schema-registry bash -c "
                                 curl -s \
-                                ${SCHEMA_REGISTRY_URL}/subjects/${SUBJECT_NAME}/versions/latest | jq '.'
+                                ${SCHEMA_REGISTRY_URL}/subjects/${SUBJECT_NAME}/versions/latest
                             "
                             '''
                             break
@@ -229,7 +229,7 @@ EOF"
                                 -X POST \
                                 -H 'Content-Type: application/vnd.schemaregistry.v1+json' \
                                 -d '{\"schema\": \"${SCHEMA_DEFINITION}\"}' \
-                                ${SCHEMA_REGISTRY_URL}/subjects/${SUBJECT_NAME}/versions | jq '.'
+                                ${SCHEMA_REGISTRY_URL}/subjects/${SUBJECT_NAME}/versions
                             "
                             '''
                             break
@@ -248,13 +248,16 @@ EOF"
                 docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
                 exec -T schema-registry bash -c "
                     echo 'Schema Registry Mode:'
-                    curl -s ${SCHEMA_REGISTRY_URL}/mode | jq '.'
+                    curl -s ${SCHEMA_REGISTRY_URL}/mode
+                    echo
                     
                     echo 'Schema Registry Config:'
-                    curl -s ${SCHEMA_REGISTRY_URL}/config | jq '.'
+                    curl -s ${SCHEMA_REGISTRY_URL}/config
+                    echo
                     
-                    echo 'Schema Registry Subjects Count:'
-                    curl -s ${SCHEMA_REGISTRY_URL}/subjects | jq 'length'
+                    echo 'Schema Registry Subjects:'
+                    curl -s ${SCHEMA_REGISTRY_URL}/subjects
+                    echo
                 "
                 '''
             }
