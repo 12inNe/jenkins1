@@ -200,10 +200,10 @@ PRODUCER_EOF
 
                     echo "Producer config created:"
                     cat /tmp/producer.properties
-                    
+
                     echo "Test data content:"
                     cat /tmp/test-data.json
-                    
+
                     echo "Producing messages..."
                     kafka-console-producer --bootstrap-server localhost:9092 --topic '"$TEST_TOPIC"' --producer.config /tmp/producer.properties < /tmp/test-data.json
                 '
@@ -237,7 +237,7 @@ CONSUMER_EOF
 
                     echo "Consumer config created:"
                     cat /tmp/consumer.properties
-                    
+
                     # Consume messages (with timeout)
                     echo "Consuming messages for 15 seconds..."
                     timeout 15s kafka-console-consumer --bootstrap-server localhost:9092 --topic '"$TEST_TOPIC"' --consumer.config /tmp/consumer.properties --from-beginning || true
@@ -246,34 +246,6 @@ CONSUMER_EOF
             }
         }
 
-        stage('Alternative: Test with String Serializer') {
-            steps {
-                sh '''
-                echo "Testing with simple string serializer as fallback..."
-                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
-                exec -T broker bash -c '
-                    export KAFKA_OPTS=""
-                    export JMX_PORT=""
-                    export KAFKA_JMX_OPTS=""
-                    unset JMX_PORT
-                    unset KAFKA_JMX_OPTS
-
-                    # Create simple producer config
-                    cat > /tmp/simple-producer.properties << "SIMPLE_PRODUCER_EOF"
-security.protocol=SASL_PLAINTEXT
-sasl.mechanism=PLAIN
-sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="admin-secret";
-SIMPLE_PRODUCER_EOF
-
-                    echo "Producing with simple string serializer..."
-                    kafka-console-producer --bootstrap-server localhost:9092 --topic '"$TEST_TOPIC"'-simple --producer.config /tmp/simple-producer.properties < /tmp/test-data.json
-                    
-                    echo "Consuming with simple string deserializer..."
-                    timeout 10s kafka-console-consumer --bootstrap-server localhost:9092 --topic '"$TEST_TOPIC"'-simple --consumer.config /tmp/simple-producer.properties --from-beginning || true
-                '
-                '''
-            }
-        }
 
         stage('List All Topics') {
             steps {
