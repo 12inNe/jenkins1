@@ -1,10 +1,13 @@
 pipeline {
     agent any
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 
     stages {
         stage('Hello') {
 =======
+=======
+>>>>>>> Stashed changes
     
     // Active Choice Parameters for Schema Management
     parameters {
@@ -127,6 +130,8 @@ pipeline {
     
     stages {
         stage('Schema Parameter Validation') {
+<<<<<<< Updated upstream
+=======
             steps {
                 script {
                     echo "=== Schema Configuration ==="
@@ -145,6 +150,27 @@ pipeline {
             }
         }
 
+        stage('Verify Docker Compose Setup') {
+>>>>>>> Stashed changes
+            steps {
+                script {
+                    echo "=== Schema Configuration ==="
+                    echo "Schema Type: ${params.SCHEMA_TYPE}"
+                    echo "Schema Template: ${params.SCHEMA_TEMPLATE}"
+                    echo "Compatibility Level: ${params.COMPATIBILITY_LEVEL}"
+                    echo "Naming Strategy: ${params.SUBJECT_NAMING_STRATEGY}"
+                    echo "Schema Action: ${params.SCHEMA_ACTION}"
+                    echo "Schema Version: ${params.SCHEMA_VERSION}"
+                    echo "Validate Schema: ${params.VALIDATE_SCHEMA}"
+                    echo "Test Evolution: ${params.TEST_SCHEMA_EVOLUTION}"
+                    echo "Backup Existing: ${params.BACKUP_EXISTING_SCHEMA}"
+                    echo "Subject Name: ${env.SCHEMA_SUBJECT}"
+                    echo "============================"
+                }
+            }
+        }
+
+<<<<<<< Updated upstream
         stage('Verify Docker Compose Setup') {
 >>>>>>> Stashed changes
             steps {
@@ -175,6 +201,8 @@ pipeline {
     }
 }
 =======
+=======
+>>>>>>> Stashed changes
         stage('Wait for Schema Registry') {
             steps {
                 script {
@@ -510,5 +538,9 @@ def testSchemaEvolution() {
         http://localhost:8081/compatibility/subjects/${SCHEMA_SUBJECT}/versions/latest
     "
     '''
+<<<<<<< Updated upstream
+}
+>>>>>>> Stashed changes
+=======
 }
 >>>>>>> Stashed changes
