@@ -185,7 +185,7 @@ EOF"
                     export KAFKA_JMX_OPTS=''
                     unset JMX_PORT
                     unset KAFKA_JMX_OPTS
-                    
+
                     # Create producer config with schema registry
                     cat > /tmp/producer.properties << 'PRODUCER_EOF'
 security.protocol=SASL_PLAINTEXT
@@ -195,7 +195,7 @@ key.serializer=org.apache.kafka.common.serialization.StringSerializer
 value.serializer=io.confluent.kafka.serializers.json.KafkaJsonSchemaSerializer
 schema.registry.url=http://schema-registry:8081
 PRODUCER_EOF
-                    
+
                     # Produce messages
                     kafka-console-producer --bootstrap-server localhost:9092 --topic $TEST_TOPIC --producer.config /tmp/producer.properties < /tmp/test-data.json
                 "
@@ -214,7 +214,7 @@ PRODUCER_EOF
                     export KAFKA_JMX_OPTS=''
                     unset JMX_PORT
                     unset KAFKA_JMX_OPTS
-                    
+
                     # Create consumer config with schema registry
                     cat > /tmp/consumer.properties << 'CONSUMER_EOF'
 security.protocol=SASL_PLAINTEXT
@@ -226,7 +226,7 @@ schema.registry.url=http://schema-registry:8081
 group.id=test-consumer-group
 auto.offset.reset=earliest
 CONSUMER_EOF
-                    
+
                     # Consume messages (with timeout)
                     echo 'Consuming messages for 15 seconds...'
                     timeout 15s kafka-console-consumer --bootstrap-server localhost:9092 --topic $TEST_TOPIC --consumer.config /tmp/consumer.properties --from-beginning || true
