@@ -10,21 +10,21 @@ pipeline {
 
         stage('Fix Branch Detected') {
             when {
-                branch pattern: "fix-*", comparator: "REGEXP"
+                branch "fix-*"
             }
             steps {
-                echo "This branch name matches 'fix'"
+                 sh '''
+                    cat README.md
+                 '''
             }
         }
 
         stage('Pull Request Check') {
             when {
-                expression {
-                    return env.CHANGE_ID != null
-                }
+                branch "PR-*"
             }
             steps {
-                echo "This is a Pull Request build. PR ID: ${env.CHANGE_ID}"
+                echo "This only runs for the PRs"
             }
         }
     }
