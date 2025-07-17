@@ -81,9 +81,9 @@ EOF"
                 docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
                 exec -T schema-registry bash -c "
                     echo 'Registry URL: http://localhost:8081'
-                    echo 'Mode:' && curl -s http://localhost:8081/mode | jq -r '.mode'
-                    echo 'Compatibility Level:' && curl -s http://localhost:8081/config | jq -r '.compatibilityLevel'
-                    echo 'Current Subjects Count:' && curl -s http://localhost:8081/subjects | jq 'length'
+                    echo 'Mode:' && curl -s http://localhost:8081/mode
+                    echo 'Compatibility Level:' && curl -s http://localhost:8081/config
+                    echo 'Current Subjects:' && curl -s http://localhost:8081/subjects
                 "
                 '''
             }
@@ -95,12 +95,13 @@ EOF"
                 echo "📋 Listing existing schema subjects..."
                 docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
                 exec -T schema-registry bash -c "
-                    SUBJECTS=\\$(curl -s http://localhost:8081/subjects | jq -r '.[]')
-                    if [ -z \"\\$SUBJECTS\" ]; then
+                    RESPONSE=\\$(curl -s http://localhost:8081/subjects)
+                    echo 'Raw subjects response:'
+                    echo \"\\$RESPONSE\"
+                    if [ \"\\$RESPONSE\" = '[]' ]; then
                         echo 'No existing subjects found'
                     else
-                        echo 'Existing subjects:'
-                        echo \"\\$SUBJECTS\" | sort
+                        echo 'Subjects found in registry'
                     fi
                 "
                 '''
@@ -146,11 +147,10 @@ EOF"
                 echo "Verifying schema registration..."
                 docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
                 exec -T schema-registry bash -c "
-                    echo 'Schema ID and Version:'
-                    curl -s http://localhost:8081/subjects/$TEST_TOPIC-value/versions/latest | jq '.'
+                    echo 'Schema registration response:'
+                    curl -s http://localhost:8081/subjects/$TEST_TOPIC-value/versions/latest
                     echo ''
-                    echo 'Schema Content:'
-                    curl -s http://localhost:8081/subjects/$TEST_TOPIC-value/versions/latest | jq -r '.schema' | jq '.'
+                    echo 'Schema verification completed'
                 "
                 '''
             }
@@ -259,10 +259,9 @@ CONSUMER_EOF
                 docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
                 exec -T schema-registry bash -c "
                     echo 'All registered subjects:'
-                    curl -s http://localhost:8081/subjects | jq -r '.[]' | sort
+                    curl -s http://localhost:8081/subjects
                     echo ''
-                    echo 'Total subjects: '
-                    curl -s http://localhost:8081/subjects | jq 'length'
+                    echo 'Schema subjects listing completed'
                 "
                 '''
             }
