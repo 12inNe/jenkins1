@@ -161,11 +161,13 @@ EOF"
                 sh '''
                 echo "Creating test data file..."
                 docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
-                exec -T broker bash -c "cat > /tmp/test-data.json << 'EOF'
-{\"id\": 1, \"name\": \"John Doe\", \"email\": \"john@example.com\", \"age\": 30}
-{\"id\": 2, \"name\": \"Jane Smith\", \"email\": \"jane@example.com\", \"age\": 25}
-{\"id\": 3, \"name\": \"Bob Johnson\", \"email\": \"bob@example.com\", \"age\": 35}
-EOF"
+                exec -T broker bash -c '
+                    cat > /tmp/test-data.json << "DATA_EOF"
+{"id": 1, "name": "John Doe", "email": "john@example.com", "age": 30}
+{"id": 2, "name": "Jane Smith", "email": "jane@example.com", "age": 25}
+{"id": 3, "name": "Bob Johnson", "email": "bob@example.com", "age": 35}
+DATA_EOF
+                '
 
                 echo "Verifying test data file..."
                 docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
@@ -177,28 +179,34 @@ EOF"
         stage('Produce Messages with Schema') {
             steps {
                 sh '''
-                echo "Producing messages with Avro schema..."
+                echo "Producing messages with JSON Schema..."
                 docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
-                exec -T broker bash -c "
-                    export KAFKA_OPTS=''
-                    export JMX_PORT=''
-                    export KAFKA_JMX_OPTS=''
+                exec -T broker bash -c '
+                    export KAFKA_OPTS=""
+                    export JMX_PORT=""
+                    export KAFKA_JMX_OPTS=""
                     unset JMX_PORT
                     unset KAFKA_JMX_OPTS
 
                     # Create producer config with schema registry
-                    cat > /tmp/producer.properties << 'PRODUCER_EOF'
+                    cat > /tmp/producer.properties << "PRODUCER_EOF"
 security.protocol=SASL_PLAINTEXT
 sasl.mechanism=PLAIN
-sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"admin\" password=\"admin-secret\";
+sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="admin-secret";
 key.serializer=org.apache.kafka.common.serialization.StringSerializer
 value.serializer=io.confluent.kafka.serializers.json.KafkaJsonSchemaSerializer
 schema.registry.url=http://schema-registry:8081
 PRODUCER_EOF
 
-                    # Produce messages
-                    kafka-console-producer --bootstrap-server localhost:9092 --topic $TEST_TOPIC --producer.config /tmp/producer.properties < /tmp/test-data.json
-                "
+                    echo "Producer config created:"
+                    cat /tmp/producer.properties
+                    
+                    echo "Test data content:"
+                    cat /tmp/test-data.json
+                    
+                    echo "Producing messages..."
+                    kafka-console-producer --bootstrap-server localhost:9092 --topic '"$TEST_TOPIC"' --producer.config /tmp/producer.properties < /tmp/test-data.json
+                '
                 '''
             }
         }
@@ -208,18 +216,18 @@ PRODUCER_EOF
                 sh '''
                 echo "Consuming messages with schema validation..."
                 docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
-                exec -T broker bash -c "
-                    export KAFKA_OPTS=''
-                    export JMX_PORT=''
-                    export KAFKA_JMX_OPTS=''
+                exec -T broker bash -c '
+                    export KAFKA_OPTS=""
+                    export JMX_PORT=""
+                    export KAFKA_JMX_OPTS=""
                     unset JMX_PORT
                     unset KAFKA_JMX_OPTS
 
                     # Create consumer config with schema registry
-                    cat > /tmp/consumer.properties << 'CONSUMER_EOF'
+                    cat > /tmp/consumer.properties << "CONSUMER_EOF"
 security.protocol=SASL_PLAINTEXT
 sasl.mechanism=PLAIN
-sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"admin\" password=\"admin-secret\";
+sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="admin-secret";
 key.deserializer=org.apache.kafka.common.serialization.StringDeserializer
 value.deserializer=io.confluent.kafka.serializers.json.KafkaJsonSchemaDeserializer
 schema.registry.url=http://schema-registry:8081
@@ -227,10 +235,42 @@ group.id=test-consumer-group
 auto.offset.reset=earliest
 CONSUMER_EOF
 
+                    echo "Consumer config created:"
+                    cat /tmp/consumer.properties
+                    
                     # Consume messages (with timeout)
-                    echo 'Consuming messages for 15 seconds...'
-                    timeout 15s kafka-console-consumer --bootstrap-server localhost:9092 --topic $TEST_TOPIC --consumer.config /tmp/consumer.properties --from-beginning || true
-                "
+                    echo "Consuming messages for 15 seconds..."
+                    timeout 15s kafka-console-consumer --bootstrap-server localhost:9092 --topic '"$TEST_TOPIC"' --consumer.config /tmp/consumer.properties --from-beginning || true
+                '
+                '''
+            }
+        }
+
+        stage('Alternative: Test with String Serializer') {
+            steps {
+                sh '''
+                echo "Testing with simple string serializer as fallback..."
+                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                exec -T broker bash -c '
+                    export KAFKA_OPTS=""
+                    export JMX_PORT=""
+                    export KAFKA_JMX_OPTS=""
+                    unset JMX_PORT
+                    unset KAFKA_JMX_OPTS
+
+                    # Create simple producer config
+                    cat > /tmp/simple-producer.properties << "SIMPLE_PRODUCER_EOF"
+security.protocol=SASL_PLAINTEXT
+sasl.mechanism=PLAIN
+sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="admin-secret";
+SIMPLE_PRODUCER_EOF
+
+                    echo "Producing with simple string serializer..."
+                    kafka-console-producer --bootstrap-server localhost:9092 --topic '"$TEST_TOPIC"'-simple --producer.config /tmp/simple-producer.properties < /tmp/test-data.json
+                    
+                    echo "Consuming with simple string deserializer..."
+                    timeout 10s kafka-console-consumer --bootstrap-server localhost:9092 --topic '"$TEST_TOPIC"'-simple --consumer.config /tmp/simple-producer.properties --from-beginning || true
+                '
                 '''
             }
         }
@@ -283,6 +323,31 @@ CONSUMER_EOF
                 '''
             }
         }
+
+        stage('Debug: Check File Contents') {
+            steps {
+                sh '''
+                echo "🔍 Debug: Checking all created files..."
+                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                exec -T broker bash -c '
+                    echo "=== Client Properties ==="
+                    cat /tmp/client.properties
+                    echo ""
+                    echo "=== Test Data JSON ==="
+                    cat /tmp/test-data.json
+                    echo ""
+                    echo "=== Producer Properties ==="
+                    cat /tmp/producer.properties
+                    echo ""
+                    echo "=== Consumer Properties ==="
+                    cat /tmp/consumer.properties
+                    echo ""
+                    echo "=== File sizes ==="
+                    ls -la /tmp/*.properties /tmp/*.json
+                '
+                '''
+            }
+        }
     }
 
     post {
@@ -309,3 +374,4 @@ CONSUMER_EOF
             '''
         }
     }
+}
