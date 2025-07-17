@@ -309,4 +309,3 @@ CONSUMER_EOF
             '''
         }
     }
-}
