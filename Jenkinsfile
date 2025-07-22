@@ -35,8 +35,10 @@ pipeline {
     stages {
         stage('Setup') {
             steps {
-                confluentOps.waitForServices(env.COMPOSE_DIR)
-                confluentOps.createKafkaClientConfig(env.COMPOSE_DIR)
+                script {
+                    confluentOps.waitForServices(env.COMPOSE_DIR)
+                    confluentOps.createKafkaClientConfig(env.COMPOSE_DIR)
+                }
             }
         }
 
@@ -47,7 +49,19 @@ pipeline {
                         expression { params.OPERATION == 'CREATE_TOPIC' }
                     }
                     steps {
-                        confluentOps.createTopic(env.COMPOSE_DIR, params.TOPIC_NAME, params.PARTITIONS as Integer, params.REPLICATION_FACTOR as Integer)
+                        script {
+                            try {
+                                confluentOps.createTopic(
+                                    env.COMPOSE_DIR, 
+                                    params.TOPIC_NAME, 
+                                    params.PARTITIONS as Integer, 
+                                    params.REPLICATION_FACTOR as Integer
+                                )
+                                echo "Successfully created topic: ${params.TOPIC_NAME}"
+                            } catch (Exception e) {
+                                error "Failed to create topic ${params.TOPIC_NAME}: ${e.message}"
+                            }
+                        }
                     }
                 }
 
@@ -56,7 +70,14 @@ pipeline {
                         expression { params.OPERATION == 'LIST_TOPICS' }
                     }
                     steps {
-                        confluentOps.listAllTopics(env.COMPOSE_DIR)
+                        script {
+                            try {
+                                def topics = confluentOps.listAllTopics(env.COMPOSE_DIR)
+                                echo "Available topics: ${topics}"
+                            } catch (Exception e) {
+                                error "Failed to list topics: ${e.message}"
+                            }
+                        }
                     }
                 }
 
@@ -65,10 +86,29 @@ pipeline {
                         expression { params.OPERATION == 'DESCRIBE_TOPIC' }
                     }
                     steps {
-                        confluentOps.getTopicDetails(env.COMPOSE_DIR, params.TOPIC_NAME)
+                        script {
+                            try {
+                                def topicDetails = confluentOps.getTopicDetails(env.COMPOSE_DIR, params.TOPIC_NAME)
+                                echo "Topic details for ${params.TOPIC_NAME}: ${topicDetails}"
+                            } catch (Exception e) {
+                                error "Failed to describe topic ${params.TOPIC_NAME}: ${e.message}"
+                            }
+                        }
                     }
                 }
             }
+        }
+    }
+
+    post {
+        always {
+            echo "Topic management operation completed: ${params.OPERATION}"
+        }
+        success {
+            echo "✅ Pipeline completed successfully!"
+        }
+        failure {
+            echo "❌ Pipeline failed. Check the logs for details."
         }
     }
 }
