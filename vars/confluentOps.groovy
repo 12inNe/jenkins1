@@ -191,18 +191,26 @@ CONSUMER_EOF
 }
 
 def listAllTopics(composeDir) {
-    sh """
     echo "📋 Listing all Kafka topics..."
-    docker compose --project-directory ${composeDir} -f ${composeDir}/docker-compose.yml \\
-    exec -T broker bash -c "
-        export KAFKA_OPTS=''
-        export JMX_PORT=''
-        export KAFKA_JMX_OPTS=''
-        unset JMX_PORT
-        unset KAFKA_JMX_OPTS
-        kafka-topics --list --bootstrap-server localhost:9092 --command-config /tmp/client.properties
-    "
-    """
+
+    def topicsOutput = sh(
+        script: """
+            docker compose --project-directory ${composeDir} -f ${composeDir}/docker-compose.yml \\
+            exec -T broker bash -c "
+                export KAFKA_OPTS=''
+                export JMX_PORT=''
+                export KAFKA_JMX_OPTS=''
+                unset JMX_PORT
+                unset KAFKA_JMX_OPTS
+                kafka-topics --list --bootstrap-server localhost:9092 --command-config /tmp/client.properties
+            "
+        """,
+        returnStdout: true
+    ).trim()
+
+    def topicsList = topicsOutput.split('\n').findAll { it.trim() != '' }
+
+    return topicsList
 }
 
 def getTopicDetails(composeDir, topicName) {
