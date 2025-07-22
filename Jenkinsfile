@@ -52,9 +52,9 @@ pipeline {
                         script {
                             try {
                                 confluentOps.createTopic(
-                                    env.COMPOSE_DIR, 
-                                    params.TOPIC_NAME, 
-                                    params.PARTITIONS as Integer, 
+                                    env.COMPOSE_DIR,
+                                    params.TOPIC_NAME,
+                                    params.PARTITIONS as Integer,
                                     params.REPLICATION_FACTOR as Integer
                                 )
                                 echo "Successfully created topic: ${params.TOPIC_NAME}"
