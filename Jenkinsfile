@@ -11,71 +11,73 @@ properties([
 
 pipeline {
     agent any
-    
+
+    options {
+        timestamps() // Adds timestamps to log output
+    }
+
     environment {
-        // Set defaults
         COMPOSE_DIR = '/confluent/cp-mysetup/cp-all-in-one'
         CONNECTION_TYPE = 'local-confluent'
     }
 
     stages {
+
         stage('Parse Environment Parameters') {
             when {
                 expression { params.ParamsAsENV == 'true' }
             }
             steps {
+                echo "Parsing environment parameters..."
                 script {
                     if (params.ENVIRONMENT_PARAMS) {
                         def envParams = params.ENVIRONMENT_PARAMS.split(',').collect { it.trim() }
                         if (envParams.size() >= 1 && envParams[0]) env.COMPOSE_DIR = envParams[0]
                         if (envParams.size() >= 2 && envParams[1]) env.CONNECTION_TYPE = envParams[1]
-                        
-                        echo "Using environment parameters:"
-                        echo "  COMPOSE_DIR: ${env.COMPOSE_DIR}"
-                        echo "  CONNECTION_TYPE: ${env.CONNECTION_TYPE}"
                     }
                 }
+                echo "Using environment parameters:"
+                echo "  COMPOSE_DIR: ${env.COMPOSE_DIR}"
+                echo "  CONNECTION_TYPE: ${env.CONNECTION_TYPE}"
             }
         }
 
         stage('Validate Parameters') {
             steps {
+                echo "Validating topic name..."
                 script {
                     if (!params.TopicName?.trim()) {
                         error "Topic name is required"
                     }
-                    
-                    echo "Validation passed for topic deletion: ${params.TopicName}"
                 }
+                echo "Validation passed for topic deletion: ${params.TopicName}"
             }
         }
 
         stage('Setup Kafka Environment') {
             steps {
+                echo "Setting up Kafka environment at ${env.COMPOSE_DIR}"
                 script {
-                    echo "Setting up Kafka environment at ${env.COMPOSE_DIR}"
                     confluentOps.waitForServices(env.COMPOSE_DIR)
                     confluentOps.createKafkaClientConfig(env.COMPOSE_DIR)
-                    echo "Kafka environment ready"
                 }
+                echo "Kafka environment ready"
             }
         }
 
         stage('Check Topic Exists') {
             steps {
+                echo "Checking if topic '${params.TopicName}' exists..."
                 script {
-                    echo "Verifying that topic '${params.TopicName}' exists..."
-                    
                     def allTopics = confluentOps.listAllTopics(env.COMPOSE_DIR)
                     def topicExists = allTopics.contains(params.TopicName)
-                    
+
                     if (!topicExists) {
                         error "Topic '${params.TopicName}' does not exist. Available topics: ${allTopics.join(', ')}"
                     }
-                    
+
                     echo "✅ Topic '${params.TopicName}' exists and can be deleted"
-                    
-                    // Get topic details before deletion for logging
+
                     def topicDetails = confluentOps.getTopicDetails(env.COMPOSE_DIR, params.TopicName)
                     env.TOPIC_DETAILS_BEFORE_DELETE = topicDetails
                 }
@@ -84,8 +86,7 @@ pipeline {
 
         stage('Pre-deletion Safety Check') {
             steps {
-                script {
-                    echo """
+                echo """
 ⚠️  FINAL SAFETY CHECK
 ====================
 Topic to DELETE: ${params.TopicName}
@@ -99,34 +100,28 @@ ${env.TOPIC_DETAILS_BEFORE_DELETE}
 ⚠️  WARNING: This action cannot be undone!
 All data in this topic will be permanently lost!
 """
-                }
             }
         }
 
         stage('Delete Topic') {
             steps {
+                echo "🗑️  Proceeding with deletion of topic '${params.TopicName}'..."
+                echo "⚠️  This is irreversible - all topic data will be lost!"
                 script {
-                    echo "🗑️  Proceeding with deletion of topic '${params.TopicName}'..."
-                    echo "⚠️  This is irreversible - all topic data will be lost!"
-                    
                     confluentOps.deleteTopic(env.COMPOSE_DIR, params.TopicName)
-                    
-                    echo "✅ Topic '${params.TopicName}' has been deleted"
                 }
+                echo "✅ Topic '${params.TopicName}' has been deleted"
             }
         }
 
         stage('Verify Deletion') {
             steps {
+                echo "Verifying topic deletion..."
+                sleep(time: 3, unit: 'SECONDS')
                 script {
-                    echo "Verifying topic deletion..."
-                    
-                    // Wait a moment for deletion to propagate
-                    sleep(time: 3, unit: 'SECONDS')
-                    
                     def allTopics = confluentOps.listAllTopics(env.COMPOSE_DIR)
                     def topicStillExists = allTopics.contains(params.TopicName)
-                    
+
                     if (topicStillExists) {
                         echo "⚠️  Topic still appears in list - deletion may still be in progress"
                         echo "Current topics: ${allTopics.join(', ')}"
@@ -141,8 +136,7 @@ All data in this topic will be permanently lost!
 
     post {
         success {
-            script {
-                echo """
+            echo """
 ✅ DELETION COMPLETED SUCCESSFULLY
 =================================
 Topic '${params.TopicName}' has been permanently deleted
@@ -151,7 +145,6 @@ Environment: ${env.COMPOSE_DIR}
 Timestamp: ${new Date().format('yyyy-MM-dd HH:mm:ss')}
 =================================
 """
-            }
         }
         failure {
             echo "❌ Failed to delete topic '${params.TopicName}' - check logs for details"
