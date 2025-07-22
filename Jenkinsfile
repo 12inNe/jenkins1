@@ -215,7 +215,7 @@ pipeline {
                     switch(params.OPERATION) {
                         case 'LIST_TOPICS':
                             echo "Calling List Topics job..."
-                            def listResult = build job: '12inNe/jenkins1/list-topic', parameters: [
+                            def listResult = build job: 'GIT-org/jenkins1/list-topic', parameters: [
                                 string(name: 'ParamsAsENV', value: 'true'),
                                 string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
                             ]
@@ -224,7 +224,7 @@ pipeline {
 
                         case 'CREATE_TOPIC':
                             echo "Calling Create Topic job..."
-                            def createResult = build job: '12inNe/jenkins1/create-topic', parameters: [
+                            def createResult = build job: 'GIT-org/jenkins1/create-topic', parameters: [
                                 string(name: 'TopicName', value: "${env.TOPIC_NAME}"),
                                 string(name: 'Partitions', value: "${env.PARTITIONS}"),
                                 string(name: 'ReplicationFactor', value: "${env.REPLICATION_FACTOR}"),
@@ -236,7 +236,7 @@ pipeline {
 
                         case 'DESCRIBE_TOPIC':
                             echo "Calling Describe Topic job..."
-                            def describeResult = build job: '12inNe/jenkins1/describe-topic', parameters: [
+                            def describeResult = build job: 'GIT-org/jenkins1/describe-topic', parameters: [
                                 string(name: 'TopicName', value: "${env.TOPIC_NAME}"),
                                 string(name: 'ParamsAsENV', value: 'true'),
                                 string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
@@ -255,7 +255,7 @@ pipeline {
                             }
                             echo "Confirmation successful, proceeding with deletion..."
 
-                            def deleteResult = build job: '12inNe/jenkins1/delete-topic', parameters: [
+                            def deleteResult = build job: 'GIT-org/jenkins1/delete-topic', parameters: [
                                 string(name: 'TopicName', value: "${env.TOPIC_NAME}"),
                                 string(name: 'ParamsAsENV', value: 'true'),
                                 string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
