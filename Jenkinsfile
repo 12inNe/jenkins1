@@ -160,3 +160,4 @@ Timestamp: ${new Date().format('yyyy-MM-dd HH:mm:ss')}
             echo "Delete topic operation completed"
         }
     }
+}
