@@ -152,6 +152,8 @@ pipeline {
     environment {
         COMPOSE_DIR = '/confluent/cp-mysetup/cp-all-in-one'
         CONNECTION_TYPE = 'local-confluent'
+        // Configure correct job paths - UPDATE THESE TO MATCH YOUR ACTUAL JENKINS STRUCTURE
+        KAFKA_JOBS_FOLDER = 'kafka-operations'  // Change this to your actual folder structure
     }
 
     stages {
@@ -160,6 +162,61 @@ pipeline {
                 script {
                     echo "Starting Kafka Topic Management"
                     echo "Operation: ${params.OPERATION}"
+                    
+                    // Verify Jenkins job paths exist before execution
+                    def jobPaths = [
+                        'list-topics': "${env.KAFKA_JOBS_FOLDER}/list-topics",
+                        'create-topic': "${env.KAFKA_JOBS_FOLDER}/create-topic", 
+                        'describe-topic': "${env.KAFKA_JOBS_FOLDER}/describe-topic",
+                        'delete-topic': "${env.KAFKA_JOBS_FOLDER}/delete-topic"
+                    ]
+                    
+                    echo "Expected job paths:"
+                    jobPaths.each { operation, path ->
+                        echo "  ${operation}: ${path}"
+                    }
+                }
+            }
+        }
+
+        stage('Validate Job Existence') {
+            steps {
+                script {
+                    // Check if required downstream jobs exist
+                    def requiredJob = ""
+                    switch(params.OPERATION) {
+                        case 'LIST_TOPICS':
+                            requiredJob = "${env.KAFKA_JOBS_FOLDER}/list-topics"
+                            break
+                        case 'CREATE_TOPIC':
+                            requiredJob = "${env.KAFKA_JOBS_FOLDER}/create-topic"
+                            break
+                        case 'DESCRIBE_TOPIC':
+                            requiredJob = "${env.KAFKA_JOBS_FOLDER}/describe-topic"
+                            break
+                        case 'DELETE_TOPIC':
+                            requiredJob = "${env.KAFKA_JOBS_FOLDER}/delete-topic"
+                            break
+                    }
+                    
+                    if (requiredJob) {
+                        try {
+                            // Try to get job information to verify it exists
+                            def job = Jenkins.instance.getItemByFullName(requiredJob)
+                            if (!job) {
+                                error "Required downstream job not found: ${requiredJob}\n" +
+                                      "Please check:\n" +
+                                      "1. Job exists in Jenkins\n" +
+                                      "2. Job path is correct\n" +
+                                      "3. You have permissions to access the job\n" +
+                                      "4. Update KAFKA_JOBS_FOLDER environment variable if needed"
+                            }
+                            echo "✅ Downstream job found: ${requiredJob}"
+                        } catch (Exception e) {
+                            echo "⚠️ Could not verify job existence (this might be normal in some Jenkins setups)"
+                            echo "Proceeding with execution - if job doesn't exist, you'll get a build error"
+                        }
+                    }
                 }
             }
         }
@@ -212,59 +269,107 @@ pipeline {
         stage('Execute Operation') {
             steps {
                 script {
-                    switch(params.OPERATION) {
-                        case 'LIST_TOPICS':
-                            echo "Calling List Topics job..."
-                            def listResult = build job: '12inNe/jenkins1/list-topics', parameters: [
-                                string(name: 'ParamsAsENV', value: 'true'),
-                                string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
-                            ]
-                            echo "List topics completed with status: ${listResult.result}"
-                            break
+                    try {
+                        switch(params.OPERATION) {
+                            case 'LIST_TOPICS':
+                                echo "Calling List Topics job..."
+                                // Option 1: If you have separate Jenkins jobs created from your GitHub pipelines
+                                def listResult = build job: 'list-topics', 
+                                    parameters: [
+                                        string(name: 'ParamsAsENV', value: 'true'),
+                                        string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
+                                    ],
+                                    wait: true,
+                                    propagate: true
+                                echo "✅ List topics completed with status: ${listResult.result}"
+                                break
 
-                        case 'CREATE_TOPIC':
-                            echo "Calling Create Topic job..."
-                            def createResult = build job: '12inNe/jenkins1/create-topic', parameters: [
-                                string(name: 'TopicName', value: "${env.TOPIC_NAME}"),
-                                string(name: 'Partitions', value: "${env.PARTITIONS}"),
-                                string(name: 'ReplicationFactor', value: "${env.REPLICATION_FACTOR}"),
-                                string(name: 'ParamsAsENV', value: 'true'),
-                                string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
-                            ]
-                            echo "Create topic completed with status: ${createResult.result}"
-                            break
+                            case 'CREATE_TOPIC':
+                                echo "Calling Create Topic job..."
+                                def createResult = build job: 'create-topic', 
+                                    parameters: [
+                                        string(name: 'TopicName', value: "${env.TOPIC_NAME}"),
+                                        string(name: 'Partitions', value: "${env.PARTITIONS}"),
+                                        string(name: 'ReplicationFactor', value: "${env.REPLICATION_FACTOR}"),
+                                        string(name: 'ParamsAsENV', value: 'true'),
+                                        string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
+                                    ],
+                                    wait: true,
+                                    propagate: true
+                                echo "✅ Create topic completed with status: ${createResult.result}"
+                                break
 
-                        case 'DESCRIBE_TOPIC':
-                            echo "Calling Describe Topic job..."
-                            def describeResult = build job: '12inNe/jenkins1/describe-topic', parameters: [
-                                string(name: 'TopicName', value: "${env.TOPIC_NAME}"),
-                                string(name: 'ParamsAsENV', value: 'true'),
-                                string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
-                            ]
-                            echo "Describe topic completed with status: ${describeResult.result}"
-                            break
+                            case 'DESCRIBE_TOPIC':
+                                echo "Calling Describe Topic job..."
+                                def describeResult = build job: 'describe-topic', 
+                                    parameters: [
+                                        string(name: 'TopicName', value: "${env.TOPIC_NAME}"),
+                                        string(name: 'ParamsAsENV', value: 'true'),
+                                        string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
+                                    ],
+                                    wait: true,
+                                    propagate: true
+                                echo "✅ Describe topic completed with status: ${describeResult.result}"
+                                break
 
-                        case 'DELETE_TOPIC':
-                            echo "Requesting delete confirmation..."
-                            def confirmName = input(
-                                message: "Delete topic '${env.TOPIC_NAME}'? This cannot be undone!",
-                                parameters: [string(name: 'CONFIRM_NAME', description: "Type topic name to confirm")]
-                            )
-                            if (confirmName != env.TOPIC_NAME) {
-                                error "Confirmation failed - typed '${confirmName}' but expected '${env.TOPIC_NAME}'"
-                            }
-                            echo "Confirmation successful, proceeding with deletion..."
+                            case 'DELETE_TOPIC':
+                                echo "Requesting delete confirmation..."
+                                def confirmName = input(
+                                    message: "⚠️ Delete topic '${env.TOPIC_NAME}'? This cannot be undone!",
+                                    parameters: [
+                                        string(name: 'CONFIRM_NAME', 
+                                               description: "Type the exact topic name '${env.TOPIC_NAME}' to confirm deletion:",
+                                               defaultValue: '')
+                                    ],
+                                    submitterParameter: 'APPROVER'
+                                )
+                                
+                                if (confirmName != env.TOPIC_NAME) {
+                                    error "❌ Confirmation failed - you typed '${confirmName}' but expected '${env.TOPIC_NAME}'"
+                                }
+                                echo "✅ Confirmation successful, proceeding with deletion..."
 
-                            def deleteResult = build job: '12inNe/jenkins1/delete-topic', parameters: [
-                                string(name: 'TopicName', value: "${env.TOPIC_NAME}"),
-                                string(name: 'ParamsAsENV', value: 'true'),
-                                string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
-                            ]
-                            echo "Delete topic completed with status: ${deleteResult.result}"
-                            break
+                                def deleteResult = build job: 'delete-topic', 
+                                    parameters: [
+                                        string(name: 'TopicName', value: "${env.TOPIC_NAME}"),
+                                        string(name: 'ParamsAsENV', value: 'true'),
+                                        string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
+                                    ],
+                                    wait: true,
+                                    propagate: true
+                                echo "✅ Delete topic completed with status: ${deleteResult.result}"
+                                break
 
-                        default:
-                            error "Unknown operation: ${params.OPERATION}"
+                            default:
+                                error "Unknown operation: ${params.OPERATION}"
+                        }
+                    } catch (Exception e) {
+                        echo "❌ Error executing operation: ${e.getMessage()}"
+                        if (e.getMessage().contains("No item named")) {
+                            error """
+❌ Jenkins job not found error!
+
+The downstream Jenkins job could not be found. Please check:
+
+1. **Job Path**: Verify the job path is correct
+   - Current folder: ${env.KAFKA_JOBS_FOLDER}
+   - Expected job: ${env.KAFKA_JOBS_FOLDER}/<operation-job-name>
+
+2. **Job Existence**: Ensure the downstream jobs exist:
+   - list-topics
+   - create-topic  
+   - describe-topic
+   - delete-topic
+
+3. **Permissions**: Verify you have access to trigger downstream jobs
+
+4. **Folder Structure**: Update KAFKA_JOBS_FOLDER environment variable if your jobs are in a different folder
+
+Original error: ${e.getMessage()}
+                            """
+                        } else {
+                            throw e
+                        }
                     }
                 }
             }
@@ -273,13 +378,19 @@ pipeline {
 
     post {
         success {
-            echo "Kafka topic operation '${params.OPERATION}' completed successfully"
+            echo "✅ Kafka topic operation '${params.OPERATION}' completed successfully"
         }
         failure {
-            echo "Kafka topic operation '${params.OPERATION}' failed - check logs for details"
+            echo "❌ Kafka topic operation '${params.OPERATION}' failed - check logs for details"
         }
         always {
-            echo "Cleaning up temporary environment variables"
+            echo "🧹 Cleaning up temporary environment variables"
+            script {
+                // Clean up environment variables
+                env.TOPIC_NAME = null
+                env.PARTITIONS = null
+                env.REPLICATION_FACTOR = null
+            }
         }
     }
 }
