@@ -89,7 +89,8 @@ pipeline {
                 }
             }
         }
-
+    }
+    
     post {
         success {
             echo "✅ Topic '${params.TopicName}' has been created successfully"
@@ -99,7 +100,6 @@ pipeline {
         }
         always {
             echo "Create topic operation completed"
-        }
         }
     }
 }
