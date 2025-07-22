@@ -151,6 +151,7 @@ pipeline {
     agent any
     environment {
         COMPOSE_DIR = '/confluent/cp-mysetup/cp-all-in-one'
+        CONNECTION_TYPE = 'local-confluent'
     }
 
     stages {
@@ -208,77 +209,63 @@ pipeline {
             }
         }
 
-        stage('Delete Confirmation') {
-            when { expression { params.OPERATION == 'DELETE_TOPIC' } }
+        stage('Execute Operation') {
             steps {
                 script {
-                    def confirmName = input(
-                        message: "Delete topic '${env.TOPIC_NAME}'? This cannot be undone!",
-                        parameters: [string(name: 'CONFIRM_NAME', description: "Type topic name to confirm")]
-                    )
-                    if (confirmName != env.TOPIC_NAME) error "Confirmation failed"
-                    echo "Deletion confirmed"
-                }
-            }
-        }
+                    switch(params.OPERATION) {
+                        case 'LIST_TOPICS':
+                            echo "Calling List Topics job..."
+                            def listResult = build job: 'Jenkins Practice/jenkins-practice-manage-topic/list-topics', parameters: [
+                                string(name: 'ParamsAsENV', value: 'true'),
+                                string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
+                            ]
+                            echo "List topics completed with status: ${listResult.result}"
+                            break
 
-        stage('Setup Kafka') {
-            steps {
-                script {
-                    echo "Setting up Kafka environment"
-                    confluentOps.waitForServices(env.COMPOSE_DIR)
-                    confluentOps.createKafkaClientConfig(env.COMPOSE_DIR)
-                    echo "Kafka ready"
-                }
-            }
-        }
+                        case 'CREATE_TOPIC':
+                            echo "Calling Create Topic job..."
+                            def createResult = build job: 'Jenkins Practice/jenkins-practice-manage-topic/create-topic', parameters: [
+                                string(name: 'TopicName', value: "${env.TOPIC_NAME}"),
+                                string(name: 'Partitions', value: "${env.PARTITIONS}"),
+                                string(name: 'ReplicationFactor', value: "${env.REPLICATION_FACTOR}"),
+                                string(name: 'ParamsAsENV', value: 'true'),
+                                string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
+                            ]
+                            echo "Create topic completed with status: ${createResult.result}"
+                            break
 
-        stage('List Topics') {
-            when { expression { params.OPERATION == 'LIST_TOPICS' } }
-            steps {
-                script {
-                    echo "Listing all topics..."
-                    def topics = confluentOps.listAllTopics(env.COMPOSE_DIR)
-                    echo "Found ${topics.size()} topics:"
-                    topics.each { echo "  - ${it}" }
-                }
-            }
-        }
+                        case 'DESCRIBE_TOPIC':
+                            echo "Calling Describe Topic job..."
+                            def describeResult = build job: 'Jenkins Practice/jenkins-practice-manage-topic/describe-topic', parameters: [
+                                string(name: 'TopicName', value: "${env.TOPIC_NAME}"),
+                                string(name: 'ParamsAsENV', value: 'true'),
+                                string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
+                            ]
+                            echo "Describe topic completed with status: ${describeResult.result}"
+                            break
 
-        stage('Create Topic') {
-            when { expression { params.OPERATION == 'CREATE_TOPIC' } }
-            steps {
-                script {
-                    echo "Creating topic ${env.TOPIC_NAME}..."
-                    confluentOps.createTopic(
-                        env.COMPOSE_DIR,
-                        env.TOPIC_NAME,
-                        env.PARTITIONS as Integer,
-                        env.REPLICATION_FACTOR as Integer
-                    )
-                    echo "Topic created successfully"
-                }
-            }
-        }
+                        case 'DELETE_TOPIC':
+                            echo "Requesting delete confirmation..."
+                            def confirmName = input(
+                                message: "Delete topic '${env.TOPIC_NAME}'? This cannot be undone!",
+                                parameters: [string(name: 'CONFIRM_NAME', description: "Type topic name to confirm")]
+                            )
+                            if (confirmName != env.TOPIC_NAME) {
+                                error "Confirmation failed - typed '${confirmName}' but expected '${env.TOPIC_NAME}'"
+                            }
+                            echo "Confirmation successful, proceeding with deletion..."
+                            
+                            def deleteResult = build job: 'Jenkins Practice/jenkins-practice-manage-topic/delete-topic', parameters: [
+                                string(name: 'TopicName', value: "${env.TOPIC_NAME}"),
+                                string(name: 'ParamsAsENV', value: 'true'),
+                                string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
+                            ]
+                            echo "Delete topic completed with status: ${deleteResult.result}"
+                            break
 
-        stage('Describe Topic') {
-            when { expression { params.OPERATION == 'DESCRIBE_TOPIC' } }
-            steps {
-                script {
-                    echo "Getting details for topic ${env.TOPIC_NAME}..."
-                    def details = confluentOps.getTopicDetails(env.COMPOSE_DIR, env.TOPIC_NAME)
-                    echo "Topic details:\n${details}"
-                }
-            }
-        }
-
-        stage('Delete Topic') {
-            when { expression { params.OPERATION == 'DELETE_TOPIC' } }
-            steps {
-                script {
-                    echo "Deleting topic ${env.TOPIC_NAME}..."
-                    confluentOps.deleteTopic(env.COMPOSE_DIR, env.TOPIC_NAME)
-                    echo "Topic deleted successfully"
+                        default:
+                            error "Unknown operation: ${params.OPERATION}"
+                    }
                 }
             }
         }
@@ -286,10 +273,13 @@ pipeline {
 
     post {
         success {
-            echo "Operation completed successfully"
+            echo "Kafka topic operation '${params.OPERATION}' completed successfully"
         }
         failure {
-            echo "Operation failed - check logs for details"
+            echo "Kafka topic operation '${params.OPERATION}' failed - check logs for details"
+        }
+        always {
+            echo "Cleaning up temporary environment variables"
         }
     }
 }
