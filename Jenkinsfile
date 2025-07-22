@@ -3,7 +3,7 @@
 // ==============================================================
 // File: topic-management-pipeline.groovy
 
-@Library('confluent-platform-lib') _
+@Library('kafka-ops-shared-lib') _
 
 pipeline {
     agent any
