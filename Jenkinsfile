@@ -1,11 +1,9 @@
 @Library('kafka-ops-shared-lib') _
 
-// Job: jenkins-practice-manage-topic/create-topic
+// Job: jenkins-practice-manage-topic/describe-topic
 properties([
     parameters([
-        string(name: 'TopicName', defaultValue: '', description: 'Name of the topic to create'),
-        string(name: 'Partitions', defaultValue: '3', description: 'Number of partitions'),
-        string(name: 'ReplicationFactor', defaultValue: '2', description: 'Replication factor'),
+        string(name: 'TopicName', defaultValue: '', description: 'Name of the topic to describe'),
         string(name: 'ParamsAsENV', defaultValue: 'false', description: 'Use environment parameters'),
         string(name: 'ENVIRONMENT_PARAMS', defaultValue: '', description: 'Environment specific parameters (comma-separated)')
     ])
@@ -46,18 +44,8 @@ pipeline {
                     if (!params.TopicName?.trim()) {
                         error "Topic name is required"
                     }
-                    if (!params.TopicName.matches('^[a-zA-Z0-9._-]+$')) {
-                        error "Invalid topic name format. Use alphanumeric characters, dots, underscores, and hyphens only."
-                    }
-                    if (!params.Partitions?.trim() || !params.Partitions.isInteger()) {
-                        error "Partitions must be a valid integer"
-                    }
-                    if (!params.ReplicationFactor?.trim() || !params.ReplicationFactor.isInteger()) {
-                        error "Replication factor must be a valid integer"
-                    }
                     
                     echo "Validation passed for topic: ${params.TopicName}"
-                    echo "Partitions: ${params.Partitions}, Replication Factor: ${params.ReplicationFactor}"
                 }
             }
         }
@@ -73,32 +61,61 @@ pipeline {
             }
         }
 
-        stage('Create Topic') {
+        stage('Check Topic Exists') {
             steps {
                 script {
-                    echo "Creating topic '${params.TopicName}' with ${params.Partitions} partitions and replication factor ${params.ReplicationFactor}"
+                    echo "Checking if topic '${params.TopicName}' exists..."
                     
-                    confluentOps.createTopic(
-                        env.COMPOSE_DIR,
-                        params.TopicName,
-                        params.Partitions as Integer,
-                        params.ReplicationFactor as Integer
-                    )
+                    def allTopics = confluentOps.listAllTopics(env.COMPOSE_DIR)
+                    def topicExists = allTopics.contains(params.TopicName)
                     
-                    echo "✅ Topic '${params.TopicName}' created successfully"
+                    if (!topicExists) {
+                        error "Topic '${params.TopicName}' does not exist. Available topics: ${allTopics.join(', ')}"
+                    }
+                    
+                    echo "✅ Topic '${params.TopicName}' exists"
                 }
             }
         }
 
+        stage('Describe Topic') {
+            steps {
+                script {
+                    echo "🔍 Getting detailed information for topic '${params.TopicName}'..."
+                    
+                    def topicDetails = confluentOps.getTopicDetails(env.COMPOSE_DIR, params.TopicName)
+                    
+                    echo """
+🔍 TOPIC DETAILS REPORT
+========================
+Topic Name: ${params.TopicName}
+Connection: ${env.CONNECTION_TYPE}
+Environment: ${env.COMPOSE_DIR}
+========================
+
+${topicDetails}
+
+========================
+Report Generated: ${new Date().format('yyyy-MM-dd HH:mm:ss')}
+========================
+"""
+                    
+                    // Store details for potential downstream use
+                    env.TOPIC_DETAILS = topicDetails
+                }
+            }
+        }
+    }
+
     post {
         success {
-            echo "✅ Topic '${params.TopicName}' has been created successfully"
+            echo "✅ Successfully retrieved details for topic '${params.TopicName}'"
         }
         failure {
-            echo "❌ Failed to create topic '${params.TopicName}' - check logs for details"
+            echo "❌ Failed to describe topic '${params.TopicName}' - check if topic exists and Kafka is accessible"
         }
         always {
-            echo "Create topic operation completed"
+            echo "Describe topic operation completed"
         }
     }
 }
