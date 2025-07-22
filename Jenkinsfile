@@ -90,17 +90,6 @@ pipeline {
             }
         }
 
-        stage('Verify Topic Creation') {
-            steps {
-                script {
-                    echo "Verifying topic creation..."
-                    def topicDetails = confluentOps.getTopicDetails(env.COMPOSE_DIR, params.TopicName)
-                    echo "Topic verification successful:\n${topicDetails}"
-                }
-            }
-        }
-    }
-
     post {
         success {
             echo "✅ Topic '${params.TopicName}' has been created successfully"
