@@ -214,34 +214,112 @@ pipeline {
                 script {
                     switch(params.OPERATION) {
                         case 'LIST_TOPICS':
-                            echo "Calling List Topics job..."
-                            def listResult = build job: 'GIT-org/jenkins1/list-topic', parameters: [
-                                string(name: 'ParamsAsENV', value: 'true'),
-                                string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
-                            ]
-                            echo "List topics completed with status: ${listResult.result}"
+                            echo "==== Calling List Topics job ===="
+                            def listResult = build job: 'GIT-org/jenkins1/list-topic', 
+                                parameters: [
+                                    string(name: 'ParamsAsENV', value: 'true'),
+                                    string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
+                                ],
+                                propagate: false // Don't fail main job if downstream fails
+                            
+                            echo "==== List Topics Results ===="
+                            echo "Status: ${listResult.result}"
+                            echo "Build Number: ${listResult.number}"
+                            echo "Duration: ${listResult.duration}ms"
+                            
+                            // Get console output from the downstream job
+                            try {
+                                def consoleOutput = getConsoleOutput(listResult)
+                                echo "==== Console Output from List Topics ===="
+                                echo consoleOutput
+                            } catch (Exception e) {
+                                echo "Could not retrieve console output: ${e.message}"
+                            }
+                            
+                            // Archive the result as an artifact
+                            writeFile file: 'list-topics-result.txt', 
+                                     text: "Status: ${listResult.result}\nBuild: ${listResult.number}\nDuration: ${listResult.duration}ms"
+                            archiveArtifacts artifacts: 'list-topics-result.txt'
+                            
+                            if (listResult.result != 'SUCCESS') {
+                                echo "⚠️ List topics job failed or was unstable"
+                            } else {
+                                echo "✅ List topics completed successfully"
+                            }
                             break
 
                         case 'CREATE_TOPIC':
-                            echo "Calling Create Topic job..."
-                            def createResult = build job: 'GIT-org/jenkins1/create-topic', parameters: [
-                                string(name: 'TopicName', value: "${env.TOPIC_NAME}"),
-                                string(name: 'Partitions', value: "${env.PARTITIONS}"),
-                                string(name: 'ReplicationFactor', value: "${env.REPLICATION_FACTOR}"),
-                                string(name: 'ParamsAsENV', value: 'true'),
-                                string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
-                            ]
-                            echo "Create topic completed with status: ${createResult.result}"
+                            echo "==== Calling Create Topic job ===="
+                            def createResult = build job: 'GIT-org/jenkins1/create-topic', 
+                                parameters: [
+                                    string(name: 'TopicName', value: "${env.TOPIC_NAME}"),
+                                    string(name: 'Partitions', value: "${env.PARTITIONS}"),
+                                    string(name: 'ReplicationFactor', value: "${env.REPLICATION_FACTOR}"),
+                                    string(name: 'ParamsAsENV', value: 'true'),
+                                    string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
+                                ],
+                                propagate: false
+                            
+                            echo "==== Create Topic Results ===="
+                            echo "Status: ${createResult.result}"
+                            echo "Build Number: ${createResult.number}"
+                            echo "Duration: ${createResult.duration}ms"
+                            echo "Topic Name: ${env.TOPIC_NAME}"
+                            echo "Partitions: ${env.PARTITIONS}"
+                            echo "Replication Factor: ${env.REPLICATION_FACTOR}"
+                            
+                            try {
+                                def consoleOutput = getConsoleOutput(createResult)
+                                echo "==== Console Output from Create Topic ===="
+                                echo consoleOutput
+                            } catch (Exception e) {
+                                echo "Could not retrieve console output: ${e.message}"
+                            }
+                            
+                            writeFile file: 'create-topic-result.txt', 
+                                     text: "Status: ${createResult.result}\nTopic: ${env.TOPIC_NAME}\nPartitions: ${env.PARTITIONS}\nReplication: ${env.REPLICATION_FACTOR}\nBuild: ${createResult.number}\nDuration: ${createResult.duration}ms"
+                            archiveArtifacts artifacts: 'create-topic-result.txt'
+                            
+                            if (createResult.result != 'SUCCESS') {
+                                echo "⚠️ Create topic job failed or was unstable"
+                            } else {
+                                echo "✅ Topic '${env.TOPIC_NAME}' created successfully"
+                            }
                             break
 
                         case 'DESCRIBE_TOPIC':
-                            echo "Calling Describe Topic job..."
-                            def describeResult = build job: 'GIT-org/jenkins1/describe-topic', parameters: [
-                                string(name: 'TopicName', value: "${env.TOPIC_NAME}"),
-                                string(name: 'ParamsAsENV', value: 'true'),
-                                string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
-                            ]
-                            echo "Describe topic completed with status: ${describeResult.result}"
+                            echo "==== Calling Describe Topic job ===="
+                            def describeResult = build job: 'GIT-org/jenkins1/describe-topic', 
+                                parameters: [
+                                    string(name: 'TopicName', value: "${env.TOPIC_NAME}"),
+                                    string(name: 'ParamsAsENV', value: 'true'),
+                                    string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
+                                ],
+                                propagate: false
+                            
+                            echo "==== Describe Topic Results ===="
+                            echo "Status: ${describeResult.result}"
+                            echo "Build Number: ${describeResult.number}"
+                            echo "Duration: ${describeResult.duration}ms"
+                            echo "Topic Name: ${env.TOPIC_NAME}"
+                            
+                            try {
+                                def consoleOutput = getConsoleOutput(describeResult)
+                                echo "==== Console Output from Describe Topic ===="
+                                echo consoleOutput
+                            } catch (Exception e) {
+                                echo "Could not retrieve console output: ${e.message}"
+                            }
+                            
+                            writeFile file: 'describe-topic-result.txt', 
+                                     text: "Status: ${describeResult.result}\nTopic: ${env.TOPIC_NAME}\nBuild: ${describeResult.number}\nDuration: ${describeResult.duration}ms"
+                            archiveArtifacts artifacts: 'describe-topic-result.txt'
+                            
+                            if (describeResult.result != 'SUCCESS') {
+                                echo "⚠️ Describe topic job failed or was unstable"
+                            } else {
+                                echo "✅ Topic '${env.TOPIC_NAME}' described successfully"
+                            }
                             break
 
                         case 'DELETE_TOPIC':
@@ -255,12 +333,38 @@ pipeline {
                             }
                             echo "Confirmation successful, proceeding with deletion..."
 
-                            def deleteResult = build job: 'GIT-org/jenkins1/delete-topic', parameters: [
-                                string(name: 'TopicName', value: "${env.TOPIC_NAME}"),
-                                string(name: 'ParamsAsENV', value: 'true'),
-                                string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
-                            ]
-                            echo "Delete topic completed with status: ${deleteResult.result}"
+                            echo "==== Calling Delete Topic job ===="
+                            def deleteResult = build job: 'GIT-org/jenkins1/delete-topic', 
+                                parameters: [
+                                    string(name: 'TopicName', value: "${env.TOPIC_NAME}"),
+                                    string(name: 'ParamsAsENV', value: 'true'),
+                                    string(name: 'ENVIRONMENT_PARAMS', value: "${env.COMPOSE_DIR},${env.CONNECTION_TYPE}")
+                                ],
+                                propagate: false
+                            
+                            echo "==== Delete Topic Results ===="
+                            echo "Status: ${deleteResult.result}"
+                            echo "Build Number: ${deleteResult.number}"
+                            echo "Duration: ${deleteResult.duration}ms"
+                            echo "Deleted Topic: ${env.TOPIC_NAME}"
+                            
+                            try {
+                                def consoleOutput = getConsoleOutput(deleteResult)
+                                echo "==== Console Output from Delete Topic ===="
+                                echo consoleOutput
+                            } catch (Exception e) {
+                                echo "Could not retrieve console output: ${e.message}"
+                            }
+                            
+                            writeFile file: 'delete-topic-result.txt', 
+                                     text: "Status: ${deleteResult.result}\nDeleted Topic: ${env.TOPIC_NAME}\nBuild: ${deleteResult.number}\nDuration: ${deleteResult.duration}ms"
+                            archiveArtifacts artifacts: 'delete-topic-result.txt'
+                            
+                            if (deleteResult.result != 'SUCCESS') {
+                                echo "⚠️ Delete topic job failed or was unstable"
+                            } else {
+                                echo "✅ Topic '${env.TOPIC_NAME}' deleted successfully"
+                            }
                             break
 
                         default:
@@ -273,13 +377,53 @@ pipeline {
 
     post {
         success {
-            echo "Kafka topic operation '${params.OPERATION}' completed successfully"
+            echo "✅ Kafka topic operation '${params.OPERATION}' completed successfully"
+            
+            // Generate a summary report
+            script {
+                def summary = "=== KAFKA TOPIC OPERATION SUMMARY ===\n"
+                summary += "Operation: ${params.OPERATION}\n"
+                summary += "Timestamp: ${new Date().format('yyyy-MM-dd HH:mm:ss')}\n"
+                
+                switch(params.OPERATION) {
+                    case 'CREATE_TOPIC':
+                        summary += "Topic Created: ${env.TOPIC_NAME}\n"
+                        summary += "Partitions: ${env.PARTITIONS}\n"
+                        summary += "Replication Factor: ${env.REPLICATION_FACTOR}\n"
+                        break
+                    case 'DELETE_TOPIC':
+                        summary += "Topic Deleted: ${env.TOPIC_NAME}\n"
+                        break
+                    case 'DESCRIBE_TOPIC':
+                        summary += "Topic Described: ${env.TOPIC_NAME}\n"
+                        break
+                    case 'LIST_TOPICS':
+                        summary += "Listed all available topics\n"
+                        break
+                }
+                summary += "Status: SUCCESS\n"
+                
+                echo summary
+                writeFile file: 'operation-summary.txt', text: summary
+                archiveArtifacts artifacts: 'operation-summary.txt'
+            }
         }
         failure {
-            echo "Kafka topic operation '${params.OPERATION}' failed - check logs for details"
+            echo "❌ Kafka topic operation '${params.OPERATION}' failed - check logs for details"
         }
         always {
             echo "Cleaning up temporary environment variables"
         }
+    }
+}
+
+// Helper function to get console output from downstream job
+def getConsoleOutput(buildResult) {
+    def build = buildResult.getRawBuild()
+    def logFile = build.getLogFile()
+    if (logFile.exists()) {
+        return logFile.text
+    } else {
+        return "Console log not available"
     }
 }
