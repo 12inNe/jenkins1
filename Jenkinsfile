@@ -1,9 +1,9 @@
 @Library('kafka-ops-shared-lib') _
 
-// Job: jenkins-practice-manage-topic/describe-topic
+// Job: jenkins-practice-manage-topic/delete-topic
 properties([
     parameters([
-        string(name: 'TopicName', defaultValue: '', description: 'Name of the topic to describe'),
+        string(name: 'TopicName', defaultValue: '', description: 'Name of the topic to delete'),
         string(name: 'ParamsAsENV', defaultValue: 'false', description: 'Use environment parameters'),
         string(name: 'ENVIRONMENT_PARAMS', defaultValue: '', description: 'Environment specific parameters (comma-separated)')
     ])
@@ -45,7 +45,7 @@ pipeline {
                         error "Topic name is required"
                     }
                     
-                    echo "Validation passed for topic: ${params.TopicName}"
+                    echo "Validation passed for topic deletion: ${params.TopicName}"
                 }
             }
         }
@@ -64,7 +64,7 @@ pipeline {
         stage('Check Topic Exists') {
             steps {
                 script {
-                    echo "Checking if topic '${params.TopicName}' exists..."
+                    echo "Verifying that topic '${params.TopicName}' exists..."
                     
                     def allTopics = confluentOps.listAllTopics(env.COMPOSE_DIR)
                     def topicExists = allTopics.contains(params.TopicName)
@@ -73,35 +73,67 @@ pipeline {
                         error "Topic '${params.TopicName}' does not exist. Available topics: ${allTopics.join(', ')}"
                     }
                     
-                    echo "✅ Topic '${params.TopicName}' exists"
+                    echo "✅ Topic '${params.TopicName}' exists and can be deleted"
+                    
+                    // Get topic details before deletion for logging
+                    def topicDetails = confluentOps.getTopicDetails(env.COMPOSE_DIR, params.TopicName)
+                    env.TOPIC_DETAILS_BEFORE_DELETE = topicDetails
                 }
             }
         }
 
-        stage('Describe Topic') {
+        stage('Pre-deletion Safety Check') {
             steps {
                 script {
-                    echo "🔍 Getting detailed information for topic '${params.TopicName}'..."
-                    
-                    def topicDetails = confluentOps.getTopicDetails(env.COMPOSE_DIR, params.TopicName)
-                    
                     echo """
-🔍 TOPIC DETAILS REPORT
-========================
-Topic Name: ${params.TopicName}
+⚠️  FINAL SAFETY CHECK
+====================
+Topic to DELETE: ${params.TopicName}
 Connection: ${env.CONNECTION_TYPE}
 Environment: ${env.COMPOSE_DIR}
-========================
 
-${topicDetails}
+Topic Details:
+${env.TOPIC_DETAILS_BEFORE_DELETE}
+====================
 
-========================
-Report Generated: ${new Date().format('yyyy-MM-dd HH:mm:ss')}
-========================
+⚠️  WARNING: This action cannot be undone!
+All data in this topic will be permanently lost!
 """
+                }
+            }
+        }
+
+        stage('Delete Topic') {
+            steps {
+                script {
+                    echo "🗑️  Proceeding with deletion of topic '${params.TopicName}'..."
+                    echo "⚠️  This is irreversible - all topic data will be lost!"
                     
-                    // Store details for potential downstream use
-                    env.TOPIC_DETAILS = topicDetails
+                    confluentOps.deleteTopic(env.COMPOSE_DIR, params.TopicName)
+                    
+                    echo "✅ Topic '${params.TopicName}' has been deleted"
+                }
+            }
+        }
+
+        stage('Verify Deletion') {
+            steps {
+                script {
+                    echo "Verifying topic deletion..."
+                    
+                    // Wait a moment for deletion to propagate
+                    sleep(time: 3, unit: 'SECONDS')
+                    
+                    def allTopics = confluentOps.listAllTopics(env.COMPOSE_DIR)
+                    def topicStillExists = allTopics.contains(params.TopicName)
+                    
+                    if (topicStillExists) {
+                        echo "⚠️  Topic still appears in list - deletion may still be in progress"
+                        echo "Current topics: ${allTopics.join(', ')}"
+                    } else {
+                        echo "✅ Confirmed: Topic '${params.TopicName}' has been successfully deleted"
+                        echo "Remaining topics: ${allTopics.join(', ')}"
+                    }
                 }
             }
         }
@@ -109,13 +141,22 @@ Report Generated: ${new Date().format('yyyy-MM-dd HH:mm:ss')}
 
     post {
         success {
-            echo "✅ Successfully retrieved details for topic '${params.TopicName}'"
+            script {
+                echo """
+✅ DELETION COMPLETED SUCCESSFULLY
+=================================
+Topic '${params.TopicName}' has been permanently deleted
+Connection: ${env.CONNECTION_TYPE}
+Environment: ${env.COMPOSE_DIR}
+Timestamp: ${new Date().format('yyyy-MM-dd HH:mm:ss')}
+=================================
+"""
+            }
         }
         failure {
-            echo "❌ Failed to describe topic '${params.TopicName}' - check if topic exists and Kafka is accessible"
+            echo "❌ Failed to delete topic '${params.TopicName}' - check logs for details"
         }
         always {
-            echo "Describe topic operation completed"
+            echo "Delete topic operation completed"
         }
     }
-}
