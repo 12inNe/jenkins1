@@ -5,7 +5,7 @@ properties([
     parameters([
         string(name: 'TopicName', defaultValue: '', description: 'Name of the topic to create'),
         string(name: 'Partitions', defaultValue: '3', description: 'Number of partitions'),
-        string(name: 'ReplicationFactor', defaultValue: '2', description: 'Replication factor'),
+        string(name: 'ReplicationFactor', defaultValue: '1', description: 'Replication factor'),
         string(name: 'ParamsAsENV', defaultValue: 'false', description: 'Use environment parameters'),
         string(name: 'ENVIRONMENT_PARAMS', defaultValue: '', description: 'Environment specific parameters (comma-separated)')
     ])
@@ -90,7 +90,7 @@ pipeline {
             }
         }
     }
-    
+
     post {
         success {
             echo "✅ Topic '${params.TopicName}' has been created successfully"
