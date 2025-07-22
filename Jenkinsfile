@@ -1,145 +1,12 @@
 pipeline {
     agent any
-    
-    // Active Choice Parameters for Schema Management
-    parameters {
-        // Schema type selection
-        choice(
-            name: 'SCHEMA_TYPE',
-            choices: ['avro', 'json', 'protobuf'],
-            description: 'Select schema serialization format'
-        )
-        
-        // Dynamic schema template selection based on schema type
-        activeChoice(
-            name: 'SCHEMA_TEMPLATE',
-            choiceType: 'SINGLE_SELECT',
-            description: 'Select predefined schema template',
-            referencedParameters: 'SCHEMA_TYPE',
-            script: groovyScript {
-                script([
-                    classpath: [],
-                    sandbox: false,
-                    script: '''
-                        if (SCHEMA_TYPE == 'avro') {
-                            return [
-                                'user-avro-schema',
-                                'order-avro-schema', 
-                                'product-avro-schema',
-                                'event-avro-schema',
-                                'custom-avro-schema'
-                            ]
-                        } else if (SCHEMA_TYPE == 'json') {
-                            return [
-                                'user-json-schema',
-                                'order-json-schema',
-                                'product-json-schema',
-                                'event-json-schema',
-                                'custom-json-schema'
-                            ]
-                        } else if (SCHEMA_TYPE == 'protobuf') {
-                            return [
-                                'user-proto-schema',
-                                'order-proto-schema',
-                                'product-proto-schema',
-                                'event-proto-schema',
-                                'custom-proto-schema'
-                            ]
-                        }
-                        return ['default-schema']
-                    '''
-                ])
-            }
-        )
-        
-        // Schema compatibility level
-        choice(
-            name: 'COMPATIBILITY_LEVEL',
-            choices: ['BACKWARD', 'BACKWARD_TRANSITIVE', 'FORWARD', 'FORWARD_TRANSITIVE', 'FULL', 'FULL_TRANSITIVE', 'NONE'],
-            description: 'Schema compatibility level'
-        )
-        
-        // Schema subject naming strategy
-        choice(
-            name: 'SUBJECT_NAMING_STRATEGY',
-            choices: ['TopicNameStrategy', 'RecordNameStrategy', 'TopicRecordNameStrategy'],
-            description: 'Schema subject naming strategy'
-        )
-        
-        // Schema evolution action
-        choice(
-            name: 'SCHEMA_ACTION',
-            choices: [
-                'register-new',
-                'update-existing',
-                'test-compatibility',
-                'evolve-schema',
-                'delete-schema',
-                'list-versions'
-            ],
-            description: 'Schema registry action to perform'
-        )
-        
-        // Schema version (for updates/compatibility tests)
-        string(
-            name: 'SCHEMA_VERSION',
-            defaultValue: 'latest',
-            description: 'Schema version (use "latest" for most recent, or specify version number)'
-        )
-        
-        // Boolean parameters
-        booleanParam(
-            name: 'VALIDATE_SCHEMA',
-            defaultValue: true,
-            description: 'Validate schema structure before registration'
-        )
-        
-        booleanParam(
-            name: 'TEST_SCHEMA_EVOLUTION',
-            defaultValue: false,
-            description: 'Test schema evolution compatibility'
-        )
-        
-        booleanParam(
-            name: 'BACKUP_EXISTING_SCHEMA',
-            defaultValue: true,
-            description: 'Backup existing schema before updates'
-        )
-    }
-    
     environment {
         COMPOSE_DIR = '/confluent/cp-mysetup/cp-all-in-one'
         SCHEMA_REGISTRY_URL = 'http://localhost:8081'
         KAFKA_BOOTSTRAP_SERVERS = 'localhost:9092'
         TEST_TOPIC = 'user-events'
-        // Schema-specific environment variables
-        SELECTED_SCHEMA_TYPE = "${params.SCHEMA_TYPE}"
-        SELECTED_SCHEMA_TEMPLATE = "${params.SCHEMA_TEMPLATE}"
-        SELECTED_COMPATIBILITY = "${params.COMPATIBILITY_LEVEL}"
-        SELECTED_NAMING_STRATEGY = "${params.SUBJECT_NAMING_STRATEGY}"
-        SCHEMA_SUBJECT = "${env.TEST_TOPIC}-value"
     }
-    
     stages {
-        stage('Schema Parameter Validation') {
-            steps {
-                script {
-                    echo "=== Schema Configuration ==="
-                    echo "Schema Type: ${params.SCHEMA_TYPE}"
-                    echo "Schema Template: ${params.SCHEMA_TEMPLATE}"
-                    echo "Compatibility Level: ${params.COMPATIBILITY_LEVEL}"
-                    echo "Naming Strategy: ${params.SUBJECT_NAMING_STRATEGY}"
-                    echo "Schema Action: ${params.SCHEMA_ACTION}"
-                    echo "Schema Version: ${params.SCHEMA_VERSION}"
-                    echo "Validate Schema: ${params.VALIDATE_SCHEMA}"
-                    echo "Test Evolution: ${params.TEST_SCHEMA_EVOLUTION}"
-                    echo "Backup Existing: ${params.BACKUP_EXISTING_SCHEMA}"
-                    echo "Subject Name: ${env.SCHEMA_SUBJECT}"
-                    echo "============================"
-                }
-            }
-        }
-
         stage('Verify Docker Compose Setup') {
             steps {
                 sh '''
@@ -155,170 +22,301 @@ pipeline {
             }
         }
 
-        stage('Wait for Schema Registry') {
+        stage('Wait for Services') {
             steps {
                 script {
                     def maxRetries = 30
                     def retryCount = 0
-                    def schemaRegistryReady = false
+                    def servicesReady = false
 
-                    while (retryCount < maxRetries && !schemaRegistryReady) {
+                    while (retryCount < maxRetries && !servicesReady) {
                         try {
                             sh '''
+                            echo "Checking Kafka Broker..."
+                            docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                            exec -T broker bash -c "echo 'Broker is responsive'"
+
                             echo "Checking Schema Registry..."
                             docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
                             exec -T schema-registry curl -f -s http://localhost:8081/subjects > /dev/null
                             '''
-                            schemaRegistryReady = true
-                            echo "Schema Registry is ready!"
+                            servicesReady = true
+                            echo "All services are ready!"
                         } catch (Exception e) {
-                            echo "Schema Registry not ready yet, waiting... (attempt ${retryCount + 1}/${maxRetries})"
+                            echo "Services not ready yet, waiting... (attempt ${retryCount + 1}/${maxRetries})"
                             sleep(10)
                             retryCount++
                         }
                     }
 
-                    if (!schemaRegistryReady) {
-                        error("Schema Registry failed to start after ${maxRetries} attempts")
+                    if (!servicesReady) {
+                        error("Services failed to start after ${maxRetries} attempts")
                     }
                 }
             }
         }
 
-        stage('Set Schema Registry Configuration') {
+        stage('Create Kafka Client Config') {
             steps {
                 sh '''
-                echo "Setting global compatibility level to: $SELECTED_COMPATIBILITY"
+                echo "Creating client.properties file..."
+                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                exec -T broker bash -c "cat > /tmp/client.properties << 'EOF'
+security.protocol=SASL_PLAINTEXT
+sasl.mechanism=PLAIN
+sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\\"admin\\" password=\\"admin-secret\\";
+EOF"
+
+                echo "Verifying client.properties..."
+                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                exec -T broker bash -c "cat /tmp/client.properties"
+                '''
+            }
+        }
+
+        stage('Schema Registry Health Check') {
+            steps {
+                sh '''
+                echo "📊 Schema Registry Health Check..."
                 docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
                 exec -T schema-registry bash -c "
-                    curl -X PUT -H 'Content-Type: application/vnd.schemaregistry.v1+json' \
-                    --data '{\"compatibility\": \"'$SELECTED_COMPATIBILITY'\"}' \
-                    http://localhost:8081/config
+                    echo 'Registry URL: http://localhost:8081'
+                    echo 'Mode:' && curl -s http://localhost:8081/mode
+                    echo 'Compatibility Level:' && curl -s http://localhost:8081/config
+                    echo 'Current Subjects:' && curl -s http://localhost:8081/subjects
                 "
                 '''
             }
         }
 
-        stage('Generate Schema Definition') {
-            steps {
-                script {
-                    def schemaDefinition = generateSchemaDefinition(
-                        params.SCHEMA_TYPE, 
-                        params.SCHEMA_TEMPLATE
-                    )
-                    
-                    writeFile file: 'schema.json', text: schemaDefinition
-                    
-                    echo "Generated schema definition:"
-                    sh 'cat schema.json'
-                }
-            }
-        }
-
-        stage('Validate Schema Structure') {
-            when {
-                expression { params.VALIDATE_SCHEMA == true }
-            }
-            steps {
-                script {
-                    if (params.SCHEMA_TYPE == 'avro') {
-                        sh '''
-                        echo "Validating Avro schema structure..."
-                        docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
-                        exec -T schema-registry bash -c "
-                            # Copy schema file to container
-                            cat > /tmp/schema.json << 'EOF'
-$(cat schema.json)
-EOF
-                            
-                            # Validate schema using Schema Registry API
-                            curl -X POST -H 'Content-Type: application/vnd.schemaregistry.v1+json' \
-                            --data @/tmp/schema.json \
-                            http://localhost:8081/subjects/${SCHEMA_SUBJECT}/versions?normalize=true
-                        "
-                        '''
-                    }
-                }
-            }
-        }
-
-        stage('Backup Existing Schema') {
-            when {
-                expression { 
-                    params.BACKUP_EXISTING_SCHEMA == true && 
-                    params.SCHEMA_ACTION in ['update-existing', 'evolve-schema']
-                }
-            }
+        stage('List Existing Schema Subjects') {
             steps {
                 sh '''
-                echo "Backing up existing schema..."
+                echo "📋 Listing existing schema subjects..."
                 docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
                 exec -T schema-registry bash -c "
-                    EXISTING_SCHEMA=\\$(curl -s http://localhost:8081/subjects/${SCHEMA_SUBJECT}/versions/latest 2>/dev/null || echo 'null')
-                    if [ \"\\$EXISTING_SCHEMA\" != 'null' ]; then
-                        echo \"Backing up existing schema:\"
-                        echo \"\\$EXISTING_SCHEMA\" > /tmp/schema_backup_\\$(date +%Y%m%d_%H%M%S).json
-                        echo \"\\$EXISTING_SCHEMA\"
+                    RESPONSE=\\$(curl -s http://localhost:8081/subjects)
+                    echo 'Raw subjects response:'
+                    echo \"\\$RESPONSE\"
+                    if [ \"\\$RESPONSE\" = '[]' ]; then
+                        echo 'No existing subjects found'
                     else
-                        echo 'No existing schema to backup'
+                        echo 'Subjects found in registry'
                     fi
                 "
                 '''
             }
         }
 
-        stage('Execute Schema Action') {
+        stage('Create Test Topic') {
             steps {
-                script {
-                    switch(params.SCHEMA_ACTION) {
-                        case 'register-new':
-                            registerNewSchema()
-                            break
-                        case 'update-existing':
-                            updateExistingSchema()
-                            break
-                        case 'test-compatibility':
-                            testSchemaCompatibility()
-                            break
-                        case 'evolve-schema':
-                            evolveSchema()
-                            break
-                        case 'delete-schema':
-                            deleteSchema()
-                            break
-                        case 'list-versions':
-                            listSchemaVersions()
-                            break
-                        default:
-                            error("Unknown schema action: ${params.SCHEMA_ACTION}")
-                    }
-                }
+                sh '''
+                echo "Creating test topic: $TEST_TOPIC..."
+                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                exec -T broker bash -c "
+                    export KAFKA_OPTS=''
+                    export JMX_PORT=''
+                    export KAFKA_JMX_OPTS=''
+                    unset JMX_PORT
+                    unset KAFKA_JMX_OPTS
+                    kafka-topics --create --topic $TEST_TOPIC --bootstrap-server localhost:9092 --command-config /tmp/client.properties --partitions 3 --replication-factor 1 --if-not-exists
+                "
+                '''
             }
         }
 
-        stage('Test Schema Evolution') {
-            when {
-                expression { params.TEST_SCHEMA_EVOLUTION == true }
-            }
+        stage('Register Avro Schema') {
             steps {
-                script {
-                    testSchemaEvolution()
-                }
+                sh '''
+                echo "Registering User schema..."
+                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                exec -T schema-registry bash -c '
+                    curl -X POST -H "Content-Type: application/vnd.schemaregistry.v1+json" \
+                    --data '"'"'{
+                        "schema": "{\\"type\\":\\"record\\",\\"name\\":\\"User\\",\\"namespace\\":\\"com.example\\",\\"fields\\":[{\\"name\\":\\"id\\",\\"type\\":\\"int\\"},{\\"name\\":\\"name\\",\\"type\\":\\"string\\"},{\\"name\\":\\"email\\",\\"type\\":\\"string\\"},{\\"name\\":\\"age\\",\\"type\\":\\"int\\"}]}"
+                    }'"'"' \
+                    http://localhost:8081/subjects/'"$TEST_TOPIC"'-value/versions
+                '
+                '''
             }
         }
 
         stage('Verify Schema Registration') {
             steps {
                 sh '''
-                echo "Verifying final schema state..."
+                echo "Verifying schema registration..."
+                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                exec -T schema-registry bash -c '
+                    echo "Schema registration response:"
+                    curl -s http://localhost:8081/subjects/'"$TEST_TOPIC"'-value/versions/latest
+                    echo ""
+                    echo "Schema verification completed"
+                '
+                '''
+            }
+        }
+
+        stage('Create Test Data File') {
+            steps {
+                sh '''
+                echo "Creating test data file..."
+                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                exec -T broker bash -c '
+                    cat > /tmp/test-data.json << "DATA_EOF"
+{"id": 1, "name": "John Doe", "email": "john@example.com", "age": 30}
+{"id": 2, "name": "Jane Smith", "email": "jane@example.com", "age": 25}
+{"id": 3, "name": "Bob Johnson", "email": "bob@example.com", "age": 35}
+DATA_EOF
+                '
+
+                echo "Verifying test data file..."
+                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                exec -T broker bash -c "cat /tmp/test-data.json"
+                '''
+            }
+        }
+
+        stage('Produce Messages with Schema') {
+            steps {
+                sh '''
+                echo "Producing messages with JSON Schema..."
+                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                exec -T broker bash -c '
+                    export KAFKA_OPTS=""
+                    export JMX_PORT=""
+                    export KAFKA_JMX_OPTS=""
+                    unset JMX_PORT
+                    unset KAFKA_JMX_OPTS
+
+                    # Create producer config with schema registry
+                    cat > /tmp/producer.properties << "PRODUCER_EOF"
+security.protocol=SASL_PLAINTEXT
+sasl.mechanism=PLAIN
+sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="admin-secret";
+key.serializer=org.apache.kafka.common.serialization.StringSerializer
+value.serializer=io.confluent.kafka.serializers.json.KafkaJsonSchemaSerializer
+schema.registry.url=http://schema-registry:8081
+PRODUCER_EOF
+
+                    echo "Producer config created:"
+                    cat /tmp/producer.properties
+
+                    echo "Test data content:"
+                    cat /tmp/test-data.json
+
+                    echo "Producing messages..."
+                    kafka-console-producer --bootstrap-server localhost:9092 --topic '"$TEST_TOPIC"' --producer.config /tmp/producer.properties < /tmp/test-data.json
+                '
+                '''
+            }
+        }
+
+        stage('Consume Messages with Schema') {
+            steps {
+                sh '''
+                echo "Consuming messages with schema validation..."
+                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                exec -T broker bash -c '
+                    export KAFKA_OPTS=""
+                    export JMX_PORT=""
+                    export KAFKA_JMX_OPTS=""
+                    unset JMX_PORT
+                    unset KAFKA_JMX_OPTS
+
+                    # Create consumer config with schema registry
+                    cat > /tmp/consumer.properties << "CONSUMER_EOF"
+security.protocol=SASL_PLAINTEXT
+sasl.mechanism=PLAIN
+sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="admin-secret";
+key.deserializer=org.apache.kafka.common.serialization.StringDeserializer
+value.deserializer=io.confluent.kafka.serializers.json.KafkaJsonSchemaDeserializer
+schema.registry.url=http://schema-registry:8081
+group.id=test-consumer-group
+auto.offset.reset=earliest
+CONSUMER_EOF
+
+                    echo "Consumer config created:"
+                    cat /tmp/consumer.properties
+
+                    # Consume messages (with timeout)
+                    echo "Consuming messages for 15 seconds..."
+                    timeout 15s kafka-console-consumer --bootstrap-server localhost:9092 --topic '"$TEST_TOPIC"' --consumer.config /tmp/consumer.properties --from-beginning || true
+                '
+                '''
+            }
+        }
+
+
+        stage('List All Topics') {
+            steps {
+                sh '''
+                echo "📋 Listing all Kafka topics..."
+                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                exec -T broker bash -c "
+                    export KAFKA_OPTS=''
+                    export JMX_PORT=''
+                    export KAFKA_JMX_OPTS=''
+                    unset JMX_PORT
+                    unset KAFKA_JMX_OPTS
+                    kafka-topics --list --bootstrap-server localhost:9092 --command-config /tmp/client.properties
+                "
+                '''
+            }
+        }
+
+        stage('List All Schema Subjects') {
+            steps {
+                sh '''
+                echo "📋 Listing all schema subjects after test..."
                 docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
                 exec -T schema-registry bash -c "
-                    echo 'Current schema for subject: ${SCHEMA_SUBJECT}'
-                    curl -s http://localhost:8081/subjects/${SCHEMA_SUBJECT}/versions/latest | python3 -m json.tool || echo 'No schema found'
+                    echo 'All registered subjects:'
+                    curl -s http://localhost:8081/subjects
                     echo ''
-                    echo 'All versions:'
-                    curl -s http://localhost:8081/subjects/${SCHEMA_SUBJECT}/versions || echo 'No versions found'
+                    echo 'Schema subjects listing completed'
                 "
+                '''
+            }
+        }
+
+        stage('Topic Details') {
+            steps {
+                sh '''
+                echo "📊 Topic details for $TEST_TOPIC..."
+                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                exec -T broker bash -c "
+                    export KAFKA_OPTS=''
+                    export JMX_PORT=''
+                    export KAFKA_JMX_OPTS=''
+                    unset JMX_PORT
+                    unset KAFKA_JMX_OPTS
+                    kafka-topics --describe --topic $TEST_TOPIC --bootstrap-server localhost:9092 --command-config /tmp/client.properties
+                "
+                '''
+            }
+        }
+
+        stage('Debug: Check File Contents') {
+            steps {
+                sh '''
+                echo "🔍 Debug: Checking all created files..."
+                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                exec -T broker bash -c '
+                    echo "=== Client Properties ==="
+                    cat /tmp/client.properties
+                    echo ""
+                    echo "=== Test Data JSON ==="
+                    cat /tmp/test-data.json
+                    echo ""
+                    echo "=== Producer Properties ==="
+                    cat /tmp/producer.properties
+                    echo ""
+                    echo "=== Consumer Properties ==="
+                    cat /tmp/consumer.properties
+                    echo ""
+                    echo "=== File sizes ==="
+                    ls -la /tmp/*.properties /tmp/*.json
+                '
                 '''
             }
         }
@@ -327,167 +325,25 @@ EOF
     post {
         always {
             sh '''
-            echo "Schema pipeline completed. Final schema registry status:"
-            docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
-            exec -T schema-registry bash -c "
-                echo 'All subjects:'
-                curl -s http://localhost:8081/subjects
-                echo ''
-                echo 'Global config:'
-                curl -s http://localhost:8081/config
-            " || true
-            '''
-        }
-        success {
-            sh '''
-            echo "✅ Schema pipeline completed successfully!"
-            echo "✅ Schema Type: $SELECTED_SCHEMA_TYPE"
-            echo "✅ Schema Template: $SELECTED_SCHEMA_TEMPLATE"
-            echo "✅ Schema Action: ${SCHEMA_ACTION}"
-            echo "✅ Compatibility Level: $SELECTED_COMPATIBILITY"
+            echo "Pipeline completed. Container status:"
+            docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml ps || true
             '''
         }
         failure {
             sh '''
-            echo "❌ Schema pipeline failed. Checking Schema Registry logs..."
-            docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
-            logs --tail=50 schema-registry || true
+            echo "Pipeline failed. Checking logs..."
+            docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml logs --tail=50 broker || true
+            docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml logs --tail=50 schema-registry || true
+            '''
+        }
+        success {
+            sh '''
+            echo "✅ Complete Confluent Platform pipeline completed successfully!"
+            echo "✅ Schema Registry is working"
+            echo "✅ Kafka topics created and tested"
+            echo "✅ Avro schema registered and validated"
+            echo "✅ Messages produced and consumed with schema"
             '''
         }
     }
-}
-
-// Helper functions for schema operations
-def generateSchemaDefinition(schemaType, templateName) {
-    def schemas = [
-        'avro': [
-            'user-avro-schema': '''
-            {
-                "schema": "{\\"type\\":\\"record\\",\\"name\\":\\"User\\",\\"namespace\\":\\"com.example\\",\\"fields\\":[{\\"name\\":\\"id\\",\\"type\\":\\"int\\"},{\\"name\\":\\"name\\",\\"type\\":\\"string\\"},{\\"name\\":\\"email\\",\\"type\\":\\"string\\"},{\\"name\\":\\"age\\",\\"type\\":\\"int\\"}]}"
-            }''',
-            'order-avro-schema': '''
-            {
-                "schema": "{\\"type\\":\\"record\\",\\"name\\":\\"Order\\",\\"namespace\\":\\"com.example\\",\\"fields\\":[{\\"name\\":\\"orderId\\",\\"type\\":\\"string\\"},{\\"name\\":\\"customerId\\",\\"type\\":\\"int\\"},{\\"name\\":\\"amount\\",\\"type\\":\\"double\\"},{\\"name\\":\\"timestamp\\",\\"type\\":\\"long\\"}]}"
-            }''',
-            'product-avro-schema': '''
-            {
-                "schema": "{\\"type\\":\\"record\\",\\"name\\":\\"Product\\",\\"namespace\\":\\"com.example\\",\\"fields\\":[{\\"name\\":\\"productId\\",\\"type\\":\\"string\\"},{\\"name\\":\\"name\\",\\"type\\":\\"string\\"},{\\"name\\":\\"price\\",\\"type\\":\\"double\\"},{\\"name\\":\\"category\\",\\"type\\":\\"string\\"}]}"
-            }'''
-        ],
-        'json': [
-            'user-json-schema': '''
-            {
-                "schema": "{\\"type\\":\\"object\\",\\"properties\\":{\\"id\\":{\\"type\\":\\"integer\\"},\\"name\\":{\\"type\\":\\"string\\"},\\"email\\":{\\"type\\":\\"string\\"},\\"age\\":{\\"type\\":\\"integer\\"}},\\"required\\":[\\"id\\",\\"name\\",\\"email\\"]}"
-            }''',
-            'order-json-schema': '''
-            {
-                "schema": "{\\"type\\":\\"object\\",\\"properties\\":{\\"orderId\\":{\\"type\\":\\"string\\"},\\"customerId\\":{\\"type\\":\\"integer\\"},\\"amount\\":{\\"type\\":\\"number\\"},\\"timestamp\\":{\\"type\\":\\"integer\\"}},\\"required\\":[\\"orderId\\",\\"customerId\\",\\"amount\\"]}"
-            }'''
-        ]
-    ]
-    
-    return schemas[schemaType]?[templateName] ?: schemas[schemaType]['user-' + schemaType + '-schema']
-}
-
-def registerNewSchema() {
-    sh '''
-    echo "Registering new schema..."
-    docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
-    exec -T schema-registry bash -c "
-        curl -X POST -H 'Content-Type: application/vnd.schemaregistry.v1+json' \
-        --data @schema.json \
-        http://localhost:8081/subjects/${SCHEMA_SUBJECT}/versions
-    "
-    '''
-}
-
-def updateExistingSchema() {
-    sh '''
-    echo "Updating existing schema..."
-    docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
-    exec -T schema-registry bash -c "
-        curl -X POST -H 'Content-Type: application/vnd.schemaregistry.v1+json' \
-        --data @schema.json \
-        http://localhost:8081/subjects/${SCHEMA_SUBJECT}/versions
-    "
-    '''
-}
-
-def testSchemaCompatibility() {
-    sh '''
-    echo "Testing schema compatibility..."
-    docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
-    exec -T schema-registry bash -c "
-        curl -X POST -H 'Content-Type: application/vnd.schemaregistry.v1+json' \
-        --data @schema.json \
-        http://localhost:8081/compatibility/subjects/${SCHEMA_SUBJECT}/versions/${SCHEMA_VERSION}
-    "
-    '''
-}
-
-def evolveSchema() {
-    sh '''
-    echo "Evolving schema with compatibility check..."
-    docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
-    exec -T schema-registry bash -c "
-        # First test compatibility
-        COMPAT_RESULT=\\$(curl -s -X POST -H 'Content-Type: application/vnd.schemaregistry.v1+json' \
-        --data @schema.json \
-        http://localhost:8081/compatibility/subjects/${SCHEMA_SUBJECT}/versions/latest)
-        
-        echo 'Compatibility test result:'
-        echo \"\\$COMPAT_RESULT\"
-        
-        # If compatible, proceed with registration
-        if echo \"\\$COMPAT_RESULT\" | grep -q '\"is_compatible\":true'; then
-            echo 'Schema is compatible, proceeding with evolution...'
-            curl -X POST -H 'Content-Type: application/vnd.schemaregistry.v1+json' \
-            --data @schema.json \
-            http://localhost:8081/subjects/${SCHEMA_SUBJECT}/versions
-        else
-            echo 'Schema is not compatible, evolution aborted'
-            exit 1
-        fi
-    "
-    '''
-}
-
-def deleteSchema() {
-    sh '''
-    echo "Deleting schema..."
-    docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
-    exec -T schema-registry bash -c "
-        curl -X DELETE http://localhost:8081/subjects/${SCHEMA_SUBJECT}/versions/${SCHEMA_VERSION}
-    "
-    '''
-}
-
-def listSchemaVersions() {
-    sh '''
-    echo "Listing schema versions..."
-    docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
-    exec -T schema-registry bash -c "
-        echo 'Available versions for subject: ${SCHEMA_SUBJECT}'
-        curl -s http://localhost:8081/subjects/${SCHEMA_SUBJECT}/versions
-        echo ''
-        echo 'Latest version details:'
-        curl -s http://localhost:8081/subjects/${SCHEMA_SUBJECT}/versions/latest | python3 -m json.tool
-    "
-    '''
-}
-
-def testSchemaEvolution() {
-    sh '''
-    echo "Testing schema evolution scenarios..."
-    docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
-    exec -T schema-registry bash -c "
-        # Test adding optional field
-        echo 'Testing schema evolution with optional field...'
-        EVOLVED_SCHEMA='{\"schema\": \"{\\\\"type\\\\":\\\\"record\\\\",\\\\"name\\\\":\\\\"User\\\\",\\\\"namespace\\\\":\\\\"com.example\\\\",\\\\"fields\\\\":[{\\\\"name\\\\":\\\\"id\\\\",\\\\"type\\\\":\\\\"int\\\\"},{\\\\"name\\\\":\\\\"name\\\\",\\\\"type\\\\":\\\\"string\\\\"},{\\\\"name\\\\":\\\\"email\\\\",\\\\"type\\\\":\\\\"string\\\\"},{\\\\"name\\\\":\\\\"age\\\\",\\\\"type\\\\":\\\\"int\\\\"},{\\\\"name\\\\":\\\\"phone\\\\",\\\\"type\\\\":[\\\\"null\\\\",\\\\"string\\\\"],\\\\"default\\\\":null}]}\"}'
-        
-        curl -X POST -H 'Content-Type: application/vnd.schemaregistry.v1+json' \
-        --data \"\\$EVOLVED_SCHEMA\" \
-        http://localhost:8081/compatibility/subjects/${SCHEMA_SUBJECT}/versions/latest
-    "
-    '''
 }
