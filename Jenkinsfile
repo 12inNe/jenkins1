@@ -1,5 +1,3 @@
-@Library('kafka-ops-shared-lib') _
-
 properties([
     parameters([
         [$class: 'ChoiceParameter', 
@@ -43,7 +41,7 @@ pipeline {
     environment {
         COMPOSE_DIR = '/confluent/cp-mysetup/cp-all-in-one'
     }
-    
+
     stages {
         stage('Initialize') {
             steps {
@@ -59,7 +57,7 @@ pipeline {
                 script {
                     def option = "${params.TOPIC_OPTIONS}"
                     def values = option.split(',').collect { it.trim() }.findAll { it }
-                    
+
                     switch(params.OPERATION) {
                         case 'CREATE_TOPIC':
                             env.TOPIC_NAME = values[0]
@@ -79,7 +77,7 @@ pipeline {
                 }
             }
         }
-        
+
         stage('Validate Parameters') {
             steps {
                 script {
@@ -117,6 +115,97 @@ pipeline {
             steps {
                 script {
                     echo "Setting up Kafka environment"
+
+                    // Wait for Kafka services
+                    sh """
+                        cd ${env.COMPOSE_DIR}
+                        docker-compose ps kafka
+                    """
+
+                    echo "Kafka ready"
+                }
+            }
+        }
+
+        stage('List Topics') {
+            when { expression { params.OPERATION == 'LIST_TOPICS' } }
+            steps {
+                script {
+                    echo "Listing all topics..."
+                    def result = sh(
+                        script: """
+                            cd ${env.COMPOSE_DIR}
+                            docker-compose exec -T kafka kafka-topics --bootstrap-server localhost:9092 --list
+                        """,
+                        returnStdout: true
+                    )
+
+                    if (result) {
+                        def topics = result.trim().split('\n').findAll { it?.trim() }
+                        echo "Found ${topics?.size() ?: 0} topics:"
+                        topics?.each { echo "  - ${it}" }
+                    } else {
+                        echo "No topics found or command failed"
+                    }
+                }
+            }
+        }
+
+        stage('Create Topic') {
+            when { expression { params.OPERATION == 'CREATE_TOPIC' } }
+            steps {
+                script {
+                    echo "Creating topic ${env.TOPIC_NAME}..."
+                    sh """
+                        cd ${env.COMPOSE_DIR}
+                        docker-compose exec -T kafka kafka-topics \\
+                            --bootstrap-server localhost:9092 \\
+                            --create \\
+                            --topic ${env.TOPIC_NAME} \\
+                            --partitions ${env.PARTITIONS} \\
+                            --replication-factor ${env.REPLICATION_FACTOR}
+                    """
+                    echo "Topic created successfully"
+                }
+            }
+        }
+
+        stage('Describe Topic') {
+            when { expression { params.OPERATION == 'DESCRIBE_TOPIC' } }
+            steps {
+                script {
+                    echo "Getting details for topic ${env.TOPIC_NAME}..."
+                    def details = sh(
+                        script: """
+                            cd ${env.COMPOSE_DIR}
+                            docker-compose exec -T kafka kafka-topics \\
+                                --bootstrap-server localhost:9092 \\
+                                --describe \\
+                                --topic ${env.TOPIC_NAME}
+                        """,
+                        returnStdout: true
+                    ).trim()
+                    echo "Topic details:\n${details}"
+                }
+            }
+        }
+
+        stage('Delete Topic') {
+            when { expression { params.OPERATION == 'DELETE_TOPIC' } }
+            steps {
+                script {
+                    echo "Deleting topic ${env.TOPIC_NAME}..."
+                    sh """
+                        cd ${env.COMPOSE_DIR}
+                        docker-compose exec -T kafka kafka-topics \\
+                            --bootstrap-server localhost:9092 \\
+                            --delete \\
+                            --topic ${env.TOPIC_NAME}
+                    """
+                    echo "Topic deleted successfully"
+                }
+            }
+        } up Kafka environment"
                     confluentOps.waitForServices(env.COMPOSE_DIR)
                     confluentOps.createKafkaClientConfig(env.COMPOSE_DIR)
                     echo "Kafka ready"
