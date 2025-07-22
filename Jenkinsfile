@@ -1,11 +1,8 @@
 @Library('kafka-ops-shared-lib') _
 
-// Job: jenkins-practice-manage-topic/create-topic
+// Job: jenkins-practice-manage-topic/list-topics
 properties([
     parameters([
-        string(name: 'TopicName', defaultValue: '', description: 'Name of the topic to create'),
-        string(name: 'Partitions', defaultValue: '3', description: 'Number of partitions'),
-        string(name: 'ReplicationFactor', defaultValue: '2', description: 'Replication factor'),
         string(name: 'ParamsAsENV', defaultValue: 'false', description: 'Use environment parameters'),
         string(name: 'ENVIRONMENT_PARAMS', defaultValue: '', description: 'Environment specific parameters (comma-separated)')
     ])
@@ -40,28 +37,6 @@ pipeline {
             }
         }
 
-        stage('Validate Parameters') {
-            steps {
-                script {
-                    if (!params.TopicName?.trim()) {
-                        error "Topic name is required"
-                    }
-                    if (!params.TopicName.matches('^[a-zA-Z0-9._-]+$')) {
-                        error "Invalid topic name format. Use alphanumeric characters, dots, underscores, and hyphens only."
-                    }
-                    if (!params.Partitions?.trim() || !params.Partitions.isInteger()) {
-                        error "Partitions must be a valid integer"
-                    }
-                    if (!params.ReplicationFactor?.trim() || !params.ReplicationFactor.isInteger()) {
-                        error "Replication factor must be a valid integer"
-                    }
-                    
-                    echo "Validation passed for topic: ${params.TopicName}"
-                    echo "Partitions: ${params.Partitions}, Replication Factor: ${params.ReplicationFactor}"
-                }
-            }
-        }
-
         stage('Setup Kafka Environment') {
             steps {
                 script {
@@ -73,29 +48,45 @@ pipeline {
             }
         }
 
-        stage('Create Topic') {
+        stage('List All Topics') {
             steps {
                 script {
-                    echo "Creating topic '${params.TopicName}' with ${params.Partitions} partitions and replication factor ${params.ReplicationFactor}"
+                    echo "📋 Retrieving all Kafka topics..."
                     
-                    confluentOps.createTopic(
-                        env.COMPOSE_DIR,
-                        params.TopicName,
-                        params.Partitions as Integer,
-                        params.ReplicationFactor as Integer
-                    )
+                    def topics = confluentOps.listAllTopics(env.COMPOSE_DIR)
                     
-                    echo "✅ Topic '${params.TopicName}' created successfully"
+                    if (topics && topics.size() > 0) {
+                        echo "✅ Found ${topics.size()} topic(s):"
+                        echo "=" * 50
+                        topics.eachWithIndex { topic, index ->
+                            echo "  ${index + 1}. ${topic}"
+                        }
+                        echo "=" * 50
+                        
+                        // Store topics list for downstream jobs if needed
+                        env.TOPICS_COUNT = topics.size().toString()
+                        env.TOPICS_LIST = topics.join(',')
+                    } else {
+                        echo "⚠️  No topics found in the Kafka cluster"
+                        env.TOPICS_COUNT = '0'
+                        env.TOPICS_LIST = ''
+                    }
                 }
             }
         }
 
-        stage('Verify Topic Creation') {
+        stage('Summary Report') {
             steps {
                 script {
-                    echo "Verifying topic creation..."
-                    def topicDetails = confluentOps.getTopicDetails(env.COMPOSE_DIR, params.TopicName)
-                    echo "Topic verification successful:\n${topicDetails}"
+                    echo """
+📊 KAFKA TOPICS SUMMARY REPORT
+================================
+Connection Type: ${env.CONNECTION_TYPE}
+Kafka Environment: ${env.COMPOSE_DIR}
+Total Topics Found: ${env.TOPICS_COUNT}
+Timestamp: ${new Date().format('yyyy-MM-dd HH:mm:ss')}
+================================
+"""
                 }
             }
         }
@@ -103,13 +94,13 @@ pipeline {
 
     post {
         success {
-            echo "✅ Topic '${params.TopicName}' has been created successfully"
+            echo "✅ Successfully listed all Kafka topics (${env.TOPICS_COUNT} found)"
         }
         failure {
-            echo "❌ Failed to create topic '${params.TopicName}' - check logs for details"
+            echo "❌ Failed to list topics - check Kafka connection and logs"
         }
         always {
-            echo "Create topic operation completed"
+            echo "List topics operation completed"
         }
     }
 }
