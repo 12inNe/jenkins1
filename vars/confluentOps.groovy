@@ -228,6 +228,21 @@ def getTopicDetails(composeDir, topicName) {
     """
 }
 
+def deleteTopic(composeDir, topicName) {
+    sh """
+    echo "Deleting topic: ${topicName}..."
+    docker compose --project-directory ${composeDir} -f ${composeDir}/docker-compose.yml \\
+    exec -T broker bash -c "
+        export KAFKA_OPTS=''
+        export JMX_PORT=''
+        export KAFKA_JMX_OPTS=''
+        unset JMX_PORT
+        unset KAFKA_JMX_OPTS
+        kafka-topics --delete --topic ${topicName} --bootstrap-server localhost:9092 --command-config /tmp/client.properties
+    "
+    """
+}
+
 def debugFileContents(composeDir) {
     sh """
     echo "🔍 Debug: Checking all created files..."

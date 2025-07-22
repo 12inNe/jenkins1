@@ -152,7 +152,7 @@ pipeline {
     environment {
         COMPOSE_DIR = '/confluent/cp-mysetup/cp-all-in-one'
     }
-    
+
     stages {
         stage('Initialize') {
             steps {
@@ -168,7 +168,7 @@ pipeline {
                 script {
                     def option = "${params.TOPIC_OPTIONS}"
                     def values = option.split(',').collect { it.trim() }.findAll { it }
-                    
+
                     switch(params.OPERATION) {
                         case 'CREATE_TOPIC':
                             env.TOPIC_NAME = values[0]
