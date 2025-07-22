@@ -100,5 +100,6 @@ pipeline {
         always {
             echo "Create topic operation completed"
         }
+        }
     }
 }
