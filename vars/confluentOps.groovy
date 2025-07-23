@@ -327,3 +327,51 @@ def cleanupClientConfig() {
         // Ignore cleanup errors
     }
 }
+
+def describeKafkaTopic(topicName) {
+    try {
+        def describeOutput = sh(
+            script: """
+                docker compose --project-directory ${params.COMPOSE_DIR} -f ${params.COMPOSE_DIR}/docker-compose.yml \\
+                exec -T broker bash -c "
+                    export KAFKA_OPTS=''
+                    export JMX_PORT=''
+                    export KAFKA_JMX_OPTS=''
+                    unset JMX_PORT
+                    unset KAFKA_JMX_OPTS
+                    unset KAFKA_OPTS
+                    kafka-topics --describe --topic ${topicName} --bootstrap-server ${params.KAFKA_BOOTSTRAP_SERVER} --command-config ${env.CLIENT_CONFIG_FILE}
+                " 2>/dev/null
+            """,
+            returnStdout: true
+        ).trim()
+
+        return describeOutput
+    } catch (Exception e) {
+        return "ERROR: Failed to describe topic '${topicName}' - ${e.getMessage()}"
+    }
+}
+
+def saveTopicDescriptionsToFile(topicDescriptions) {
+    def timestamp = new Date().format('yyyy-MM-dd HH:mm:ss')
+    def textContent = """# Kafka Topics Description
+# Generated: ${timestamp}
+# Total topics described: ${topicDescriptions.size()}
+# Bootstrap server: ${params.KAFKA_BOOTSTRAP_SERVER}
+# Security protocol: ${params.SECURITY_PROTOCOL}
+# Specific topic: ${params.TOPIC_NAME ?: 'All topics'}
+
+"""
+
+    topicDescriptions.each { topicName, description ->
+        textContent += """
+================================================================================
+Topic: ${topicName}
+================================================================================
+${description}
+
+"""
+    }
+
+    writeFile file: env.TOPICS_DESCRIBE_FILE, text: textContent
+}
