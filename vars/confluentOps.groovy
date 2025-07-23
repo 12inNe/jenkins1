@@ -263,7 +263,7 @@ sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule require
             break
         default:
             securityConfig = """
-security.protocol=${params.SECURITY_PROTOCOL}
+security.protocol=SASL_PLAINTEXT
 sasl.mechanism=PLAIN
 sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="${username}" password="${password}";
 """
