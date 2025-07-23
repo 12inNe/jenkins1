@@ -73,21 +73,6 @@ def listSchemaSubjects(composeDir) {
     """
 }
 
-def createTopic(composeDir, topicName, partitions = 3, replicationFactor = 1) {
-    sh """
-    echo "Creating test topic: ${topicName}..."
-    docker compose --project-directory ${composeDir} -f ${composeDir}/docker-compose.yml \\
-    exec -T broker bash -c "
-        export KAFKA_OPTS=''
-        export JMX_PORT=''
-        export KAFKA_JMX_OPTS=''
-        unset JMX_PORT
-        unset KAFKA_JMX_OPTS
-        kafka-topics --create --topic ${topicName} --bootstrap-server localhost:9092 --command-config /tmp/client.properties --partitions ${partitions} --replication-factor ${replicationFactor} --if-not-exists
-    "
-    """
-}
-
 def registerAvroSchema(composeDir, topicName, schemaContent) {
     sh """
     echo "Registering Avro schema for topic: ${topicName}..."
@@ -375,3 +360,30 @@ ${description}
 
     writeFile file: env.TOPICS_DESCRIBE_FILE, text: textContent
 }
+
+def createTopic(topicName, partitions = 3, replicationFactor = 1) {
+    try {
+        def createOutput = sh(
+            script: """
+                docker compose --project-directory '${params.COMPOSE_DIR}' -f '${params.COMPOSE_DIR}/docker-compose.yml' \\
+                exec -T broker bash -c '
+                    set -e
+                    unset JMX_PORT KAFKA_JMX_OPTS KAFKA_OPTS
+                    kafka-topics --create \\
+                        --if-not-exists \\
+                        --topic "${topicName}" \\
+                        --bootstrap-server ${params.KAFKA_BOOTSTRAP_SERVER} \\
+                        --command-config ${env.CLIENT_CONFIG_FILE} \\
+                        --partitions ${partitions} \\
+                        --replication-factor ${replicationFactor}
+                '
+            """,
+            returnStdout: true
+        ).trim()
+
+        return "Topic '${topicName}' created or already exists.\n${createOutput}"
+    } catch (Exception e) {
+        return "ERROR: Failed to create topic '${topicName}' - ${e.getMessage()}"
+    }
+}
+
