@@ -361,7 +361,7 @@ ${description}
     writeFile file: env.TOPICS_DESCRIBE_FILE, text: textContent
 }
 
-def createTopic(topicName, partitions = 3, replicationFactor = 1) {
+def createKafkaTopic(topicName, partitions = 3, replicationFactor = 1) {
     try {
         def createOutput = sh(
             script: """
