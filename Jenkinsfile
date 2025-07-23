@@ -1,6 +1,5 @@
 @Library('kafka-ops-shared-lib') _
 
-// Job: jenkins-practice-manage-topic/list-topics
 properties([
     parameters([
         string(name: 'ParamsAsENV', defaultValue: 'false', description: 'Use environment parameters'),
@@ -10,7 +9,7 @@ properties([
 
 pipeline {
     agent any
-    
+
     environment {
         // Set defaults
         COMPOSE_DIR = '/confluent/cp-mysetup/cp-all-in-one'
@@ -28,7 +27,6 @@ pipeline {
                         def envParams = params.ENVIRONMENT_PARAMS.split(',').collect { it.trim() }
                         if (envParams.size() >= 1 && envParams[0]) env.COMPOSE_DIR = envParams[0]
                         if (envParams.size() >= 2 && envParams[1]) env.CONNECTION_TYPE = envParams[1]
-                        
                         echo "Using environment parameters:"
                         echo "  COMPOSE_DIR: ${env.COMPOSE_DIR}"
                         echo "  CONNECTION_TYPE: ${env.CONNECTION_TYPE}"
@@ -52,9 +50,9 @@ pipeline {
             steps {
                 script {
                     echo "📋 Retrieving all Kafka topics..."
-                    
+
                     def topics = confluentOps.listAllTopics(env.COMPOSE_DIR)
-                    
+
                     if (topics && topics.size() > 0) {
                         echo "✅ Found ${topics.size()} topic(s):"
                         echo "=" * 50
@@ -62,7 +60,7 @@ pipeline {
                             echo "  ${index + 1}. ${topic}"
                         }
                         echo "=" * 50
-                        
+
                         // Store topics list for downstream jobs if needed
                         env.TOPICS_COUNT = topics.size().toString()
                         env.TOPICS_LIST = topics.join(',')
