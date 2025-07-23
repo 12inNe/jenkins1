@@ -1,12 +1,6 @@
-// Job: kafka-ops/register-schema
-@Library('kafka-ops-shared-lib') _
-
+// Job: kafka-ops/list-schemas
 properties([
     parameters([
-        string(name: 'TopicName', defaultValue: '', description: 'Topic name for schema registration'),
-        choice(name: 'SchemaType', choices: ['AVRO', 'JSON'], description: 'Type of schema to register'),
-        text(name: 'SchemaContent', defaultValue: '', description: 'Schema content (JSON format)'),
-        string(name: 'SchemaFile', defaultValue: '', description: 'Path to schema file (alternative to SchemaContent)'),
         string(name: 'ParamsAsENV', defaultValue: 'false', description: 'Use environment parameters'),
         string(name: 'ENVIRONMENT_PARAMS', defaultValue: '', description: 'Environment specific parameters (comma-separated)')
     ])
@@ -44,131 +38,117 @@ pipeline {
             }
         }
 
-        stage('Validate Parameters') {
+        stage('Wait for Schema Registry') {
             steps {
                 script {
-                    if (!params.TopicName?.trim()) {
-                        error "Topic name is required"
-                    }
-                    
-                    if (!params.SchemaContent?.trim() && !params.SchemaFile?.trim()) {
-                        error "Either SchemaContent or SchemaFile must be provided"
-                    }
-                    
-                    if (params.SchemaContent?.trim() && params.SchemaFile?.trim()) {
-                        error "Provide either SchemaContent or SchemaFile, not both"
-                    }
-                    
-                    echo "Validation passed for schema registration"
-                    echo "Topic: ${params.TopicName}"
-                    echo "Schema Type: ${params.SchemaType}"
-                }
-            }
-        }
+                    def maxRetries = 30
+                    def retryCount = 0
+                    def servicesReady = false
 
-        stage('Setup Kafka Environment') {
-            steps {
-                script {
-                    echo "Setting up Kafka environment at ${env.COMPOSE_DIR}"
-                    confluentOps.waitForServices(env.COMPOSE_DIR)
-                    confluentOps.createKafkaClientConfig(env.COMPOSE_DIR)
-                    confluentOps.schemaRegistryHealthCheck(env.COMPOSE_DIR)
-                    echo "Kafka environment ready"
-                }
-            }
-        }
-
-        stage('Prepare Schema Content') {
-            steps {
-                script {
-                    def schemaContent = ""
-                    
-                    if (params.SchemaContent?.trim()) {
-                        schemaContent = params.SchemaContent.trim()
-                        echo "Using provided schema content"
-                    } else if (params.SchemaFile?.trim()) {
+                    while (retryCount < maxRetries && !servicesReady) {
                         try {
-                            schemaContent = readFile(params.SchemaFile).trim()
-                            echo "Read schema from file: ${params.SchemaFile}"
+                            sh '''
+                            echo "Checking Schema Registry..."
+                            docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                            exec -T schema-registry curl -f -s http://localhost:8081/subjects > /dev/null
+                            '''
+                            servicesReady = true
+                            echo "Schema Registry is ready!"
                         } catch (Exception e) {
-                            error "Failed to read schema file '${params.SchemaFile}': ${e.message}"
+                            echo "Schema Registry not ready yet, waiting... (attempt ${retryCount + 1}/${maxRetries})"
+                            sleep(10)
+                            retryCount++
                         }
                     }
-                    
-                    // Validate JSON format
-                    try {
-                        def jsonSlurper = new groovy.json.JsonSlurperClassic()
-                        jsonSlurper.parseText(schemaContent)
-                        echo "Schema JSON validation passed"
-                    } catch (Exception e) {
-                        error "Invalid JSON schema format: ${e.message}"
+
+                    if (!servicesReady) {
+                        error("Schema Registry failed to start after ${maxRetries} attempts")
                     }
-                    
-                    // Store for next stage
-                    env.SCHEMA_CONTENT = schemaContent
                 }
             }
         }
 
-        stage('Check Existing Subjects') {
+        stage('Schema Registry Health Check') {
             steps {
-                script {
-                    echo "Checking existing schema subjects..."
-                    confluentOps.listSchemaSubjects(env.COMPOSE_DIR)
-                }
+                sh '''
+                echo "📊 Schema Registry Health Check..."
+                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                exec -T schema-registry bash -c "
+                    echo 'Registry URL: ${SCHEMA_REGISTRY_URL}'
+                    echo 'Mode:' && curl -s http://localhost:8081/mode
+                    echo 'Compatibility Level:' && curl -s http://localhost:8081/config
+                "
+                '''
             }
         }
 
-        stage('Register Schema') {
+        stage('List All Schema Subjects') {
             steps {
-                script {
-                    echo "📝 Registering ${params.SchemaType} schema for topic: ${params.TopicName}"
-                    
-                    // Escape the schema content for shell execution
-                    def escapedSchema = env.SCHEMA_CONTENT.replace('"', '\\"').replace('\n', '').replace('\r', '')
-                    
-                    confluentOps.registerAvroSchema(
-                        env.COMPOSE_DIR,
-                        params.TopicName,
-                        escapedSchema
-                    )
-                    
-                    echo "✅ Schema registered successfully"
-                }
+                sh '''
+                echo "📋 Listing all schema subjects..."
+                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                exec -T schema-registry bash -c "
+                    RESPONSE=\\$(curl -s http://localhost:8081/subjects)
+                    echo 'All registered subjects:'
+                    echo \"\\$RESPONSE\"
+                    if [ \"\\$RESPONSE\" = '[]' ]; then
+                        echo 'No subjects found in registry'
+                    else
+                        echo 'Found subjects in registry'
+                        # Pretty print each subject
+                        echo \"\\$RESPONSE\" | sed 's/\\[//g' | sed 's/\\]//g' | sed 's/,/\\n/g' | sed 's/\"//g' | while read subject; do
+                            if [ ! -z \"\\$subject\" ]; then
+                                echo \"  - \\$subject\"
+                            fi
+                        done
+                    fi
+                "
+                '''
             }
         }
 
-        stage('Verify Schema Registration') {
+        stage('List Schema Details') {
             steps {
-                script {
-                    echo "🔍 Verifying schema registration for topic: ${params.TopicName}"
+                sh '''
+                echo "🔍 Getting detailed schema information..."
+                docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml \
+                exec -T schema-registry bash -c "
+                    SUBJECTS=\\$(curl -s http://localhost:8081/subjects | sed 's/\\[//g' | sed 's/\\]//g' | sed 's/,/\\n/g' | sed 's/\\\"//g')
                     
-                    confluentOps.verifySchemaRegistration(env.COMPOSE_DIR, params.TopicName)
-                    
-                    echo "✅ Schema registration verified"
-                }
-            }
-        }
-
-        stage('List Updated Subjects') {
-            steps {
-                script {
-                    echo "📋 Updated schema subjects after registration:"
-                    confluentOps.listSchemaSubjects(env.COMPOSE_DIR)
-                }
+                    if [ \"\\$SUBJECTS\" != \"\" ]; then
+                        echo 'Schema Details:'
+                        echo \"\\$SUBJECTS\" | while read subject; do
+                            if [ ! -z \"\\$subject\" ]; then
+                                echo \"\\n=== Subject: \\$subject ===\"
+                                echo \"Versions:\"
+                                curl -s http://localhost:8081/subjects/\\$subject/versions
+                                echo \"\\nLatest Schema:\"
+                                curl -s http://localhost:8081/subjects/\\$subject/versions/latest | jq -r '.schema' 2>/dev/null || curl -s http://localhost:8081/subjects/\\$subject/versions/latest
+                                echo \"\\n\"
+                            fi
+                        done
+                    else
+                        echo 'No schemas to display details for'
+                    fi
+                "
+                '''
             }
         }
     }
 
     post {
         success {
-            echo "✅ Schema for topic '${params.TopicName}' has been registered successfully"
+            echo "✅ Schema listing completed successfully"
         }
         failure {
-            echo "❌ Failed to register schema for topic '${params.TopicName}' - check logs for details"
+            echo "❌ Failed to list schemas - check logs for details"
+            sh '''
+            echo "Pipeline failed. Checking Schema Registry logs..."
+            docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml logs --tail=50 schema-registry || true
+            '''
         }
         always {
-            echo "Register schema operation completed"
+            echo "List schemas operation completed"
         }
     }
 }
