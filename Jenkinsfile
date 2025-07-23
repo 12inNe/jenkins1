@@ -141,11 +141,17 @@ pipeline {
             echo "✅ Schema listing completed successfully"
         }
         failure {
-            echo "❌ Failed to list schemas - check logs for details"
-            sh '''
-            echo "Pipeline failed. Checking Schema Registry logs..."
-            docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml logs --tail=50 schema-registry || true
-            '''
+            script {
+                echo "❌ Failed to list schemas - check logs for details"
+                try {
+                    sh '''
+                    echo "Pipeline failed. Checking Schema Registry logs..."
+                    docker compose --project-directory $COMPOSE_DIR -f $COMPOSE_DIR/docker-compose.yml logs --tail=50 schema-registry || true
+                    '''
+                } catch (Exception e) {
+                    echo "Could not retrieve Schema Registry logs: ${e.message}"
+                }
+            }
         }
         always {
             echo "List schemas operation completed"
