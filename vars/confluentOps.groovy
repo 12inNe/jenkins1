@@ -387,3 +387,19 @@ def createKafkaTopic(topicName, partitions = 3, replicationFactor = 1) {
     }
 }
 
+def ReturnHTML(Operation){
+    if (OPERATION == 'LIST_TOPICS'){
+        return """
+            <div style="background-color: #e8f5e8; padding: 15px; border-radius: 5px; border-left: 4px solid #28a745;">
+                <h4 style="margin: 0; color: #155724;">📋 List All Topics</h4>
+                <p style="margin: 5px 0 0 0; color: #155724;">This operation will list all available Kafka topics with detailed information including count, names, partitions, and replication factors.</p>
+                <div style="margin-top: 10px;">
+                        <label style="font-weight: bold; color: #155724;">
+                        <input type="checkbox" name="value" value="include_internal" style="margin-right: 5px;">
+                        Include internal topics (starting with _)
+                    </label>
+                </div>
+            </div>
+        """
+    }
+}
